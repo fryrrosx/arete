@@ -53,7 +53,7 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 
 | Area | Decision | Status |
 |---|---|---|
-| Name | Arete | PDF |
+| Name | Arete. Known collision: Jeremy Siek's experimental language of the same name (github.com/jsiek/arete, Python prototype, dormant since October 2023, 12 stars, a 2023 paper). Also taken: `arete` on crates.io and PyPI by unrelated projects. Keep, rename, or publish as "AreteLang": Karim decides before the first public announcement | PDF / OPEN(24) (collision) |
 | File extension | `.rt` | PDF |
 | License | MIT | P1 |
 | Repository | `github.com/fryrrosx/arete` | P1 |
@@ -93,7 +93,7 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 | Float literals | `1.5`, `1e9`, `2.5e-3`. Neither `1.` nor `.5` is allowed, so `1..10` lexes as `1 .. 10` | P1-default |
 | String literals | `"..."` and `'...'` are identical. Escapes: `\n \t \\ \" \' \u{1F600}`. Interpolation `{expr}` is always on; literal braces are written `{{` and `}}`, the only spelling. Until phase 11 a `{` or `}` inside a string is the error `string interpolation comes in phase 11`. An unterminated string is an error reported at its opening quote | P1 / P1-default (phase-3 behaviour) |
 | Booleans, null | `true`, `false`, `null` | P1-default |
-| Reserved words | `and as break catch class continue data defer elif else enum false finally fn for if import in interface is let macro not null open or override pub rethrows return select self sealed spawn super this throw throws true try unsafe use var weak when while` plus `allow` after `use`. Some are reserved for later phases; using one as a name is an error from day one | P1-default |
+| Reserved words | `and as break catch class continue data defer elif else enum false finally fn for if import in interface is let macro not null open or override pub rethrows return select self sealed spawn super this throw throws true try unsafe use var weak when while` Of these, the modifiers `data open sealed weak override pub` and `allow` are contextual, as in Kotlin: they are keywords only in their position (before `class` or `fn`, after `use`), so `let data = ...` stays legal. All other words are hard-reserved from day one, including ones for later phases | P1-default (contextual modifiers; Karim may switch to hard-reserving everything) |
 | Reserved punctuation | `-> => .. ..= ..< ? ?. ?? @ !`. `!=` is always the comparison operator (longest match); only a `!` not followed by `=` is reserved, for a possible macro-call marker decided in phase 26 | P1-default |
 
 ### 2.4 Types and values

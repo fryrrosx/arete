@@ -1,0 +1,36 @@
+arete 0.1
+# runs-after: phase 12
+
+var nums = [3, 1, 2]                # List<int>, inferred
+nums.add(4)                         # OPEN(9): mutability rules and method names
+print(nums)
+print(nums.len())
+print(nums[0])
+nums.sort()
+print(nums)
+
+let ages = {"ann": 31, "bob": 25}   # OPEN(9): Map literal; iterates in insertion order
+print(ages["ann"])
+print("bob" in ages)
+for (name, age) in ages:            # OPEN(9): destructuring in for
+    print(name + " " + str(age))    # OPEN(9): str() conversion
+
+var tags: Set<string> = Set()       # empty container: annotation, no type arguments at the call
+tags.add("a")
+tags.add("a")
+print(tags.len())
+
+let empty: List<int> = []
+print(empty.len())
+
+# expected output:
+# [3, 1, 2, 4]
+# 4
+# 3
+# [1, 2, 3, 4]
+# 31
+# true
+# ann 31
+# bob 25
+# 1
+# 0

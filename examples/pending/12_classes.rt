@@ -1,0 +1,55 @@
+arete 0.1
+# runs-after: phase 15
+
+open class Animal(name: string):               # open: may be inherited
+    fn speak() -> string:
+        return self.name + " makes a sound"    # OPEN(9): self vs this
+
+class Dog(name: string): Animal(name):         # OPEN(9): here ':' would mean three things
+    fn speak() -> string:                      # OPEN(9): override keyword?
+        return self.name + " barks"
+
+interface Shape:
+    fn area() -> float
+
+class Square(side: float): Shape:               # OPEN(9): interface implementation spelling
+    fn area() -> float:
+        return self.side * self.side
+
+data class Point(x: int, y: int)
+
+enum Color:                                    # OPEN(9): enum spelling
+    red
+    green
+    blue
+
+let a = Animal("Generic")
+let d = Dog("Rex")
+print(a.speak())
+print(d.speak())
+print(Square(3.0).area())
+
+let p = Point(1, 2)
+let q = Point(1, 2)
+print(p)
+print(p == q)                 # data class: structural equality
+print(p.copy(y = 5))          # OPEN(9): data class method names and print format
+
+let c = Color.green
+print(c)
+print(c == Color.green)
+
+# compile error if the next line is uncommented:
+# class Cat(name: string): Dog(name)
+# error: `Dog` is not open for inheritance
+#    = help: mark it `open class Dog`
+
+# expected output:
+# Generic makes a sound
+# Rex barks
+# 9.0
+# Point(x=1, y=2)
+# true
+# Point(x=1, y=5)
+# Color.green
+# true

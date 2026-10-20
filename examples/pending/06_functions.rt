@@ -1,0 +1,24 @@
+arete 0.1
+# runs-after: phase 7
+
+fn greet(name: string, greeting: string = "Hello") -> string:
+    return greeting + ", " + name + "!"
+
+fn fib(n: int) -> int:
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+fn say(text: string):           # no return value
+    print(text)
+
+print(greet("World"))
+print(greet("Karim", greeting = "Hi"))
+print(fib(20))
+say("done")
+
+# expected output:
+# Hello, World!
+# Hi, Karim!
+# 6765
+# done

@@ -1,0 +1,30 @@
+arete 0.1
+# runs-after: phase 11
+
+let name = 'Karim'
+let year = 2026
+print("Hi, {name}! Born around {year - 20}.")
+print("braces: {{not code}}")
+print('single "quotes" inside')
+print("tab:\tend\nnew line")
+print("back\\slash and \"quotes\"")
+print(name.len())               # OPEN(9): methods vs len()
+print(name.upper())
+print(name[0])                  # indexing gives a string of length 1
+print(name[1..3])               # slice, end excluded: "ar"
+print("a" + "b" * 3)            # OPEN(9): string repeat
+print("ar" in name)             # OPEN(9): substring test with `in`
+
+# expected output:
+# Hi, Karim! Born around 2006.
+# braces: {not code}
+# single "quotes" inside
+# tab:	end
+# new line
+# back\slash and "quotes"
+# 5
+# KARIM
+# K
+# ar
+# abbb
+# true

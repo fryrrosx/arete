@@ -1,0 +1,24 @@
+arete 0.1
+# runs-after: phase 20
+
+use "json@1.4" allow []              # pure computation: no rights
+use "http@2.1" allow [net]           # network only
+
+data class User(name: string, age: int?)
+
+fn load(id: int) -> User throws:
+    let res = http.get("https://example.com/user/" + str(id))   # OPEN(9): str()
+    return res.json<User>()          # OPEN(9): explicit type argument spelling
+
+try:
+    let u = load(1)
+    when u.age:
+        null -> print("age unknown")
+        else -> print(u.name + ": " + str(u.age))
+catch e:
+    print("error: " + e.message)
+
+# The test uses a local fake http package whose get() returns
+# {"name": "Ann", "age": null}, so the output is deterministic.
+# expected output:
+# age unknown

@@ -1,0 +1,27 @@
+arete 0.1
+# runs-after: phase 7
+
+fn make_counter() -> fn() -> int:
+    var count = 0
+    fn next() -> int:
+        count += 1              # captures `count` by reference; OPEN(7): capture rule
+        return count
+    return next
+
+let counter = make_counter()
+print(counter())
+print(counter())
+
+let double = fn(x: int) => x * 2        # OPEN(7): lambda spelling
+print(double(21))
+
+fn apply(f: fn(int) -> int, v: int) -> int:
+    return f(v)
+
+print(apply(fn(x) => x + 1, 9))         # x: int inferred from apply's signature
+
+# expected output:
+# 1
+# 2
+# 42
+# 10

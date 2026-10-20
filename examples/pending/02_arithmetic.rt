@@ -5,12 +5,15 @@ print(1 + 2 * 3)        # * binds tighter than +
 print((1 + 2) * 3)
 print(7 / 2)            # int / int is a float
 print(7 // 2)           # floor division
-print(-7 // 2)          # floors toward negative infinity
+print(-7 // 2)          # unary minus binds tighter than //: (-7) // 2
 print(7 % 2)
 print(-7 % 2)           # remainder takes the sign of the divisor
 print(2 ** 10)
+print(-2 ** 2)          # ** binds tighter than unary minus: -(2 ** 2)
 print(-5 + 2)
 print(1.5 * 2)          # floats always print with a decimal point
+print(1e3)
+print(0xFF)
 print(10 - 3 - 2)       # left associative
 print(2 ** 3 ** 2)      # right associative: 2 ** 9
 
@@ -23,7 +26,10 @@ print(2 ** 3 ** 2)      # right associative: 2 ** 9
 # 1
 # 1
 # 1024
+# -4
 # -3
 # 3.0
+# 1000.0
+# 255
 # 5
 # 512

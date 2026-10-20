@@ -4,7 +4,7 @@ arete 0.1
 fn worker(id: int, out: Channel<int>):      # OPEN(26): channel type and operations
     out.send(id * id)
 
-let results = Channel<int>()
+let results: Channel<int> = Channel()
 for i in 1..=3:
     spawn worker(i, results)                # lightweight task, no async keyword
 

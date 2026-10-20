@@ -6,6 +6,9 @@ let year: int = 2026        # explicit annotation
 var counter = 0             # mutable
 counter = counter + 1
 counter += 1
+counter *= 10
+counter -= 2
+counter //= 3
 let big = 1_000_000         # underscores between digits
 
 print(name)
@@ -16,11 +19,11 @@ print(big)
 # compile error if the next line is uncommented:
 # name = "other"
 # error: cannot assign to immutable `name`
-#   --> 03_variables.rt:16:1
+#   --> 03_variables.rt:20:1
 #    = help: declare it with `var` if it must change
 
 # expected output:
 # Arete
 # 2026
-# 2
+# 6
 # 1000000

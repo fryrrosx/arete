@@ -7,7 +7,7 @@ use "http@2.1" allow [net]           # network only
 data class User(name: string, age: int?)
 
 fn load(id: int) -> User throws:
-    let res = http.get("https://example.com/user/" + str(id))
+    let res = http.get("https://example.com/user/" + str(id))   # OPEN(9): str()
     return res.json<User>()          # OPEN(9): explicit type argument spelling
 
 try:

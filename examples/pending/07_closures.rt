@@ -4,7 +4,7 @@ arete 0.1
 fn make_counter() -> fn() -> int:
     var count = 0
     fn next() -> int:
-        count += 1              # captures `count` from make_counter
+        count += 1              # captures `count` by reference; OPEN(7): capture rule
         return count
     return next
 

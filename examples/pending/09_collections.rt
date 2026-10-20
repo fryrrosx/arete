@@ -9,13 +9,13 @@ print(nums[0])
 nums.sort()
 print(nums)
 
-let ages = {"ann": 31, "bob": 25}   # Map<string, int>; iteration in insertion order
+let ages = {"ann": 31, "bob": 25}   # OPEN(9): Map literal; iterates in insertion order
 print(ages["ann"])
 print("bob" in ages)
 for (name, age) in ages:            # OPEN(9): destructuring in for
     print(name + " " + str(age))    # OPEN(9): str() conversion
 
-let tags = Set<string>()
+var tags: Set<string> = Set()       # empty container: annotation, no type arguments at the call
 tags.add("a")
 tags.add("a")
 print(tags.len())

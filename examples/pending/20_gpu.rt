@@ -3,7 +3,7 @@ arete 0.1
 
 @gpu
 fn add(a: List<float>, b: List<float>) -> List<float>:
-    var out = List<float>()
+    var out: List<float> = []
     for i in 0..a.len():
         out.add(a[i] + b[i])
     return out

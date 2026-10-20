@@ -14,6 +14,19 @@ stops and the decision is revisited here, with a note of the phase that changed 
 | P1 | Decided by Karim in phase 1 (2026-10-20) |
 | P1-default | Proposed by Claude in phase 1 to keep examples consistent. Stands until Karim objects |
 | OPEN(n) | Not decided yet. Decided in phase n (see `ROADMAP.md`) |
+| PDF-implied | Follows from an example in the design discussion, not a stated decision |
+| Pn | Decided by Karim in phase n; P1 is the first instance |
+
+**Terms used below**
+
+- *REPL*: read-eval-print loop, the interactive console started by `arete 0.1`.
+- *semver*: version numbers `major.minor.patch`; before 1.0 any minor may break compatibility.
+- *lock file*: `arete.lock`, generated, records the exact version of every package a program uses.
+- *smart cast*: after `if x != null:` the compiler treats `x` as non-null inside the block.
+- *structural equality*: two values are equal when all their fields are equal, not when they are the same object.
+- *short-circuit*: `a and b` does not evaluate `b` when `a` is false; `a or b` does not evaluate `b` when `a` is true.
+- *GC*: garbage collector, a runtime that periodically pauses the program to free memory. Arete uses reference counting instead.
+- *logical line*: one statement's worth of text; defined precisely in section 3.
 
 ---
 
@@ -46,18 +59,21 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 | Repository | `github.com/fryrrosx/arete` | P1 |
 | Implementation language | C11, GNU make, no dependencies beyond libc. Compiles with gcc, clang, MSVC | PDF (C) / P1-default (portability) |
 | Audience | Developers who share loudly: vibe-coders and Python developers who need speed | PDF |
-| Release | GitHub, MIT, builds for Linux/macOS/Windows via GitHub Actions, one-command install, docs site, VS Code extension, semver (0.1 then 1.0) | PDF |
+| Release | GitHub, MIT, builds for Linux/macOS/Windows via GitHub Actions, one-command install, docs site, VS Code extension, semver (0.1 then 1.0), a flagship project written in Arete, an online playground, announcement on Hacker News, r/ProgrammingLanguages, Discord, Twitter/X, YouTube, Reddit | PDF / OPEN(24) (what the flagship project is) |
+| Execution | Tree-walking interpreter and REPL for development (phase 3), bytecode VM (phase 27), native code via LLVM for release with `arete build` (phase 32). All three must give identical output on `tests/` | PDF / OPEN(26) (VM architecture) |
+| Command line | `arete run <file.rt>` runs a file. `arete <version>` starts the REPL: banner `Arete 0.1 REPL`, prompt `>>> `, continuation prompt `... `; when stdin is not a terminal there is no banner and no prompt. All errors go to stderr; the exit code is 1 on any error, 0 otherwise. `--dump-tokens` and `--dump-ast` arrive in phase 4 | PDF (run, REPL) / P1-default (stderr, exit code, no-terminal rule) |
 
 ### 2.2 Source files and versions
 
 | Area | Decision | Status |
 |---|---|---|
 | Version header | Line 1 of every file is exactly `arete <major>.<minor>`. Nothing may precede it: no blank line, no comment, no shebang. Missing header is a compile error | PDF (header) / P1 (strict line 1) |
-| Header value now | `arete 0.1` during development. The header is the pinned language version. A 0.x toolchain runs only files with exactly the same `0.x` (minor versions break compatibility before 1.0). At the 1.0 release all files are updated once; from 1.0 on, a file `arete 1.a` runs on any toolchain `1.b` with b ≥ a | P1 |
+| Header value now | `arete 0.1` during development. The header is the pinned language version. A 0.x toolchain runs only files with exactly the same `0.x` (minor versions break compatibility before 1.0). At the 1.0 release all files are updated once; from 1.0 on, a file `arete 1.a` runs on any toolchain `1.b` with b ≥ a. Every file of a program, imported modules included, is checked by the same rule, and all files of one program must declare the same version. The version is two decimal integers, never a float: `0.10` is not `0.1` | P1 |
+| Line endings and BOM | `\n` and `\r\n` are both line ends. A UTF-8 byte-order mark at the start of a file is skipped. Spaces after the header are allowed; anything else on line 1 is `malformed version header` | P1-default |
 | REPL | Starts only with a version: `arete 0.1`. `arete` alone: `error: version required`, lists installed versions. `arete 2.0` when absent: `error: Arete 2.0 is not installed`, hint `arete install 2.0` | PDF |
 | Entry point | Top-level statements run top to bottom, like a Python script. No `main` | P1 |
-| Comments | `#` to end of line. No block comments | PDF (examples) / P1-default (no block comments) |
-| Example files | Line 2 of every file in `examples/pending/` is `# runs-after: phase N`: the first phase after which it must run. Expected output is in a comment at the end | P1 |
+| Comments | `#` to end of line. No block comments | PDF-implied / P1-default (no block comments) |
+| Example files | Line 2 of every file in `examples/pending/` is `# runs-after: phase N`: the first phase after which it must run. Expected output is in a `# expected output:` comment at the end, or a `# expected compile error:` comment for programs that must fail. When its phase is reached and it passes, `tests/promote.sh` (written in phase 3) moves the file to `examples/` and writes the sibling `.expected` or `.expected_error` file from that comment; `make examples` runs everything in `examples/` | P1 / P1-default (promotion mechanism) |
 | Encoding | Source is UTF-8. Strings may contain any Unicode. Identifiers are ASCII only for now | P1 |
 
 ### 2.3 Lexical rules
@@ -70,14 +86,15 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 | `_` | A lone underscore is the discard name: `for _ in 1..=3:`. It cannot be read | P1-default |
 | Logical operators | The words `and`, `or`, `not`. Short-circuit | P1 |
 | Comparison | `== != < <= > >=` | PDF-implied |
-| Arithmetic | `+ - * / // % **`. `/` on two ints gives a `float`; `//` is floor division; `%` is remainder with the sign of the divisor (Python semantics); `**` is power, right-associative | P1 (`/`, `//`) / P1-default (`%` sign, `**`) |
-| Compound assignment | `+= -= *= /= //= %=` | P1-default |
+| Arithmetic | `+ - * / // % **`. `/` on two ints gives a `float`; `//` is floor division; `%` is remainder with the sign of the divisor (Python semantics); `**` is power, right-associative. Unary minus is an operator, not part of the number: `-7 // 2` is `(-7) // 2`, which is `-4`; `-2 ** 2` is `-(2 ** 2)`, which is `-4` (Python). Full precedence table in section 3 | P1 (`/`, `//`) / P1-default (`%` sign, `**`, unary minus) |
+| Compound assignment | `+= -= *= /= //= %=`. Assignment is a statement, never an expression | P1-default |
+| Bitwise operators | None in 0.1: `& ^ ~ << >>` are not operators, and `\|` is only the union-type separator. Revisited when a use case appears | P1-default |
 | Integer literals | Decimal, `_` allowed between digits: `1_000_000`. Hex `0xFF`, binary `0b101` | P1-default |
 | Float literals | `1.5`, `1e9`, `2.5e-3`. Neither `1.` nor `.5` is allowed, so `1..10` lexes as `1 .. 10` | P1-default |
-| String literals | `"..."` and `'...'` are identical. Escapes: `\n \t \\ \" \' \{ \u{1F600}`. Interpolation `{expr}` is always on; literal braces are written `{{` and `}}` | P1 |
+| String literals | `"..."` and `'...'` are identical. Escapes: `\n \t \\ \" \' \u{1F600}`. Interpolation `{expr}` is always on; literal braces are written `{{` and `}}`, the only spelling. Until phase 11 a `{` or `}` inside a string is the error `string interpolation comes in phase 11`. An unterminated string is an error reported at its opening quote | P1 / P1-default (phase-3 behaviour) |
 | Booleans, null | `true`, `false`, `null` | P1-default |
-| Reserved words | `and as break catch class continue data defer elif else enum false finally fn for if import in interface is let macro not null open or pub rethrows return select self sealed spawn super this throw throws true try unsafe use var weak when while` plus `allow` after `use`. Some are reserved for later phases; using one as a name is an error from day one | P1-default |
-| Reserved punctuation | `-> => .. ..= ? ?. ?? @ !` (the `!` directly after an identifier is reserved for a possible macro-call marker, decided in phase 26) | P1-default |
+| Reserved words | `and as break catch class continue data defer elif else enum false finally fn for if import in interface is let macro not null open or override pub rethrows return select self sealed spawn super this throw throws true try unsafe use var weak when while` plus `allow` after `use`. Some are reserved for later phases; using one as a name is an error from day one | P1-default |
+| Reserved punctuation | `-> => .. ..= ..< ? ?. ?? @ !`. `!=` is always the comparison operator (longest match); only a `!` not followed by `=` is reserved, for a possible macro-call marker decided in phase 26 | P1-default |
 
 ### 2.4 Types and values
 
@@ -87,11 +104,13 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 | Base types | `int` (64-bit signed), `float` (64-bit), `string` (immutable, UTF-8), `bool`, `null` | PDF names / P1-default sizes |
 | Integer overflow | Runtime error. Wrapping operations come later as library functions. A `bigint` type may come in the standard library | P1 |
 | Union types | `int \| string`, as in TypeScript | PDF |
-| Nullability | Forbidden by default. `string?` means `string \| null`. `??` gives a default, `?.` is a safe call. Checks are static (compile time) | PDF (`?`, `??`) / P1-default (`?.`) |
+| Nullability | Forbidden by default. `string?` is the nullable string type and the only spelling: `string \| null` is an error with hint `write string?`. `??` gives a default, `?.` is a safe call. Checks are static (compile time) | PDF (`?`, `??`) / P1-default (`?.`, single spelling) |
+| Strings | Immutable. `s[i]` is a one-character string (there is no `char` type); `s[a..b]` is a slice with the end excluded. Methods vs functions (`s.len()` vs `len(s)`), repeat with `*`, substring test with `in`: open | P1-default (indexing, slicing, no `char`) / OPEN(9) (methods, repeat, `in`) |
+| Collections | `List<T>` literal `[1, 2]`; `Map<K, V>` literal `{"a": 1}`, iterated in insertion order, `m[k]` and `k in m`; `Set<T>`. An empty generic container is written with an annotation, `var s: Set<string> = Set()`, so no example needs explicit type arguments at a call. Mutability of a `let`-bound collection, `List` vs `MutableList`, method names, the meaning of empty `{}`: open | P1-default (literals, insertion order, annotated empty form) / OPEN(9) (mutability, names, empty `{}`) |
 | Variables | `let` immutable (default), `var` mutable. Assigning to a `let` is a compile error | PDF |
-| Generics | `List<T>`, `fn first<T>(xs: List<T>) -> T`, constraints `T: Comparable` | PDF |
+| Generics | `List<T>`, `fn first<T>(xs: List<T>) -> T`, `class Box<T>`, constraints `T: Comparable`. Explicit type arguments at a call (`json<User>()`) collide with `<` as comparison; the spelling is decided in phase 9, and the examples that need it are marked OPEN | PDF / OPEN(9) (explicit type arguments, reified vs erased) |
 | Memory | Automatic reference counting, no GC pauses. Manual memory only inside `unsafe` blocks | PDF |
-| Printing | `print(x)` writes one value and a newline. Floats always print with a decimal point (`3.0`). Lists print as `[1, 2, 3]` | P1-default |
+| Printing | `print` is a built-in function, not a keyword. It takes exactly one argument and writes it plus a newline; `print()` and `print(a, b)` are the error `print takes exactly one argument`. Floats print as the shortest decimal that reads back to the same value, always with a decimal point (`3.0`, `3.14159`). `true`, `false` and `null` print as those words. Lists print as `[1, 2, 3]`; strings inside lists print with double quotes, `["a", "b"]` | P1-default |
 
 ### 2.5 Statements and expressions
 
@@ -99,14 +118,14 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 |---|---|---|
 | `if` | Statement: `if cond:` / `elif cond:` / `else:` | PDF (if) / P1-default (`elif`) |
 | Conditional expression | `a if cond else b`, as in Python | P1 |
-| `when` | Pattern matching, as in Kotlin. Works as a statement and as a value on the right side of `=` or after `return`. Branches: `value ->`, `v1, v2 ->`, `in range ->`, `is Type ->`, `null ->`, `else ->`. Without a subject, branches are conditions | PDF (when) / P1 (value position) / OPEN(9) (branch spellings) |
+| `when` | Pattern matching, as in Kotlin. Works as a statement and as a value, but as a value only as the complete right-hand side of `let`, `var`, `=` or after `return`; never inside brackets and never as an operand. Branches: `value ->`, `v1, v2 ->`, `in range ->`, `is Type ->`, `null ->`, `else ->`; inside an `is Type` branch the subject has that type. Without a subject, branches are conditions. A missing branch is a runtime error until exhaustiveness checking arrives (phase 25) | PDF (when) / P1 (value position) / P1-default (branch spellings as in the examples) / OPEN(9) (range pattern spelling, branch bodies, block branches) |
 | Loops | `while cond:`; `for x in iterable:`; `break`, `continue` | PDF |
 | Ranges | `a..b` excludes `b`, `a..=b` includes `b` | OPEN(7), provisional in examples |
-| Functions | `fn name(a: int, b: string = "x") -> T:`; `return`; default values; named arguments at call site | PDF (fn) / P1-default (defaults, named args) |
-| Lambdas and closures | Functions are values; closures capture variables. Spelling of lambdas is open; examples use `fn(x) => x * 2` | OPEN(7) |
-| Errors | A function that can fail is marked `throws`; the compiler refuses an unhandled call. `throw Error("...")`, `try:` / `catch e:`, `e.message` | PDF (throws, try/catch) / OPEN(9) (typed throws, `finally`/`defer`) |
-| Classes | `class Name(params):`, methods inside, `self`, closed by default, `open` to allow inheritance, `interface`, `data class` with structural `==`, printing and `copy`, `enum` | PDF (class, open, interface, data class) / OPEN(9) (`self` vs `this`, inheritance spelling, `enum`) |
-| Modules | One file = one module. Everything private, `pub` exports. `use "./path"` imports your own file | PDF / OPEN(9) (alias, selective import) |
+| Functions | `fn name(a: int, b: string = "x") -> T:`; `return`; default values; named arguments at the call site. Omitting `-> T` means the function returns nothing: its call cannot be used as a value, and a bare `return` is allowed only there. Nested `fn` declarations are allowed. Since assignment is a statement, `f(a = 1)` is always a named argument | PDF (fn) / P1-default (defaults, named args, no-return form, nested fn) |
+| Lambdas and closures | Functions are values; closures capture variables (the examples assume capture by reference). Spelling of lambdas is open; examples use `fn(x) => x * 2`. A block lambda inside parentheses conflicts with the rule that brackets suppress indentation, so phase 7 chooses between: no block lambdas (use a nested named `fn`), a trailing block after the closing parenthesis, or a lexer exception | OPEN(7) |
+| Errors | A function that can fail is marked `throws`; the compiler refuses an unhandled call. `throw Error("...")`, `try:` / `catch e:`, `e.message` | PDF (throws, try/catch) / P1-default (`Error`, `e.message`) / OPEN(9) (typed throws, `finally`/`defer`, printing an `Error` value) |
+| Classes | `class Name(params):`, methods inside; constructor parameters become fields; `self`; closed by default, `open` allows inheritance; `interface`; `data class` with structural `==`, a printed form `Point(x=1, y=2)` and `copy`; `enum` | PDF (class, open, interface, data class) / P1-default (parameters are fields) / OPEN(9) (`self` vs `this`, inheritance and interface spelling, `override`, data class method names and print format, `enum`) |
+| Modules | One file = one module. Everything private, `pub` exports. `use "./geometry"` imports your own file; the module is then available under the file name without `.rt`, as `geometry.square` | PDF (module, pub) / P1-default (`use "./path"`, file-stem name) / OPEN(9) (alias, selective import, top-level code, cycles) |
 | Packages | `use "name@version" allow [rights]`. Rights: `net`, `fs`, `env`, `exec`, `[]` for none. Exact version pinned, plus a lock file | PDF |
 | Concurrency | Lightweight tasks: `spawn f(x)` and channels, as in Go. No async/sync split of functions | PDF / OPEN(26) (channel API) |
 | Macros | Hygienic: macro-internal names never collide with yours. Hygiene can be broken only explicitly | PDF / OPEN(26) (call marker) |
@@ -123,6 +142,39 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 4. Time-travel debugging (phase 37).
 5. CPU and GPU with one code (phase 38).
 
+### 2.7 Standard library
+
+| Module | Contents | Status |
+|---|---|---|
+| `io` | `print`, reading stdin | PDF / OPEN(21) |
+| `strings` | length, case, split, join, search, slices | PDF / OPEN(9) (names) |
+| `collections` | `List`, `Map`, `Set` and their methods | PDF / OPEN(9) (names) |
+| `math` | `sqrt`, `pow`, `abs`, `min`, `max`, constants | PDF / OPEN(21) |
+| `fs` | files and directories; needs the `fs` right | PDF / OPEN(21) |
+| `env` | environment variables; needs `env` | PDF / OPEN(21) |
+| `process` | run programs; needs `exec` | PDF / OPEN(21) |
+| `time` | clock, sleep, formatting | PDF / OPEN(21) |
+| `net`, `http` | sockets, HTTP client; need `net` | PDF / OPEN(21) (TLS) |
+| `json` | parse and print JSON | PDF / OPEN(21) |
+
+Minimum for release 0.1: `io`, `strings`, `collections`, `json`, `fs`, `http`. Whether the standard library needs a `use` line and how its modules are named (`std.fs`?) is OPEN(19).
+
+### 2.8 Tools
+
+| Tool | Decision | Status |
+|---|---|---|
+| `arete run`, REPL | phase 3 | PDF |
+| `--dump-tokens`, `--dump-ast` | phase 4 | P1-default |
+| `arete test` | runs `tests/`; phase 22 | PDF |
+| `arete fmt` | formatter, idempotent on all examples; phase 22 | PDF |
+| Linter | unused variables and the like; phase 22; error vs warning OPEN(22) | PDF |
+| `arete install X.Y`, several versions side by side | phase 22 | PDF |
+| Package manager (`arete add`, registry, publishing) | phase 20d | PDF |
+| `arete build` (native code) | phase 32 | PDF |
+| Debugger | basic in phase 28, time travel in phase 37 | PDF |
+| VS Code extension | syntax highlighting at 0.1 (phase 24), full LSP in phase 40 | PDF |
+| Playground | server-side at release, WASM in phase 40 | PDF |
+
 ---
 
 ## 3. Lexical structure in detail
@@ -131,21 +183,42 @@ Tokens the lexer produces, in the order they become relevant:
 
 | Phase | Tokens |
 |---|---|
-| 3 | `HEADER` (`arete 0.1`), `IDENT`, `INT`, `FLOAT`, `STRING`, `( )`, `NEWLINE`, `EOF`. Comments are skipped |
-| 4 | `+ - * / // % **`, `,` |
-| 5 | `let var = : < > \| ? [ ]` plus compound assignment |
-| 6 | `INDENT`, `DEDENT`, `if elif else and or not`, comparisons |
-| 7 | `while for in break continue fn return -> => .. ..=` |
+| 3 | `HEADER` (line 1, two integers), `IDENT`, `INT`, `STRING` (escapes `\n \t \\ \" \'` processed), `( )`, `NEWLINE`, `EOF`. Comments and blank lines produce no tokens |
+| 4 | `FLOAT`, `+ - * / // % **`, `,` |
+| 5 | `let var = : < > \| ? [ ] . fn ->` (the last three only inside type annotations) plus compound assignment |
+| 6 | `INDENT`, `DEDENT`, `if elif else and or not true false`, comparisons |
+| 7 | `while for in break continue return => .. ..=`; `fn` and `->` in expressions |
 | 11 | String parts for interpolation: `STRING_START`, `STRING_PART`, `INTERP_START`, `INTERP_END`, `STRING_END` |
+| 12 | `{ }` as Map literal delimiters |
+| 13 | `when is null` |
 
 Rules that hold from phase 3 on:
 
 - Every token carries `line` and `column` (1-based). Error messages use them.
-- `NEWLINE` is emitted at the end of a logical line. Inside `( [ {` no `NEWLINE`, `INDENT` or `DEDENT` is emitted.
-- The indentation stack starts at 0. A line indented deeper than the top of the stack by exactly 4 emits `INDENT`; shallower lines emit one `DEDENT` per level popped. Any other depth: `error: inconsistent indentation`.
+- A logical line is a physical line, except that inside `( [ {` line breaks are ignored, so one logical line may span several physical lines. There is no backslash continuation. `NEWLINE` is emitted at the end of a logical line. Blank lines and lines holding only a comment produce no tokens and do not affect indentation.
+- The indentation stack starts at 0. A line indented deeper than the top of the stack by exactly 4 emits `INDENT`; shallower lines emit one `DEDENT` per level popped. Any other depth: `error: inconsistent indentation`. A deeper line after a line that does not end with `:` is `error: unexpected indentation`.
 - A tab in leading whitespace: `error: tab in indentation`, hint `use 4 spaces`.
 - A number is `INT` unless it contains `.` followed by a digit, or an exponent. `1..10` is `INT DOTDOT INT`.
-- `>` `>` written as `>>` in a type position (`Map<string, List<int>>`) is split by the parser; there is no shift operator unless bitwise operators are added later.
+- The lexer never produces a `>>` token. When the type parser expects `>` and sees `>=` (as in `List<int>=[]` written without spaces) it consumes one `>` and leaves `=` as the next token.
+- An empty file reports `missing version header` at position `1:1`.
+
+Operator precedence, lowest to highest. Each later phase that adds an operator inserts a row here instead of inventing one.
+
+| Level | Operators | Notes |
+|---|---|---|
+| 1 | lambda body after `=>` | extends as far right as possible |
+| 2 | `a if c else b` | right-associative; the middle operand may not be a bare conditional |
+| 3 | `or` | |
+| 4 | `and` | |
+| 5 | `not` | prefix |
+| 6 | `== != < <= > >= in is` | non-associative: `a < b < c` is an error |
+| 7 | `??` | right-associative |
+| 8 | `.. ..=` | non-associative |
+| 9 | `+ -` | |
+| 10 | `* / // %` | |
+| 11 | unary `-` | |
+| 12 | `**` | right-associative; its right operand may start with unary `-` |
+| 13 | `() [] . ?.` | postfix: call, index, member, safe member |
 
 ---
 
@@ -173,8 +246,21 @@ Decided messages so far:
 | Assign to `let` | `` cannot assign to immutable `x` `` | `` declare it with `var` if it must change `` |
 | Tab in indentation | `tab in indentation` | `use 4 spaces` |
 | Bad indentation | `inconsistent indentation` | expected depth |
-| Package right missing | `package "http@2.1" requires [fs], but only [net] allowed` | the corrected `use` line |
+| Package right missing | `package "http@2.1" requires [net, fs], but only [net] allowed` (lists everything the package needs) | the corrected `use` line |
 | Int overflow | `` integer overflow in `a + b` `` | runtime, with position |
+| File needs another version | `file requires Arete 1.0, this is Arete 0.1` | `run: arete install 1.0` |
+| Line 1 is not `arete <int>.<int>` | `malformed version header` | `` the first line must be exactly `arete 0.1` `` |
+| Indent after a line without `:` | `unexpected indentation` | `` the previous line does not end with `:` `` |
+| Unterminated string | `unterminated string literal` | points at the opening quote |
+| Unknown character | `` unexpected character `§` `` | |
+| `print()` or `print(a, b)` | `print takes exactly one argument` | |
+| `a < b < c` | `chained comparison is not allowed` | `` write `a < b and b < c` `` |
+| `x if c` without `else` | `conditional expression needs else` | |
+| Lone `}` in a string | `single } in string` | `write }}` |
+| `int \| null` | `null is not a type name` | `write int?` |
+| `{` in a string before phase 11 | `string interpolation comes in phase 11` | |
+
+Comments in example files may abbreviate this block. A `.expected_error` file holds only the summary line; the test runner checks that stderr contains it.
 
 ---
 
@@ -206,16 +292,24 @@ let either: int | string = 5  # union
 let xs: List<int> = []        # generic
 ```
 
-Type grammar (parsed from phase 5, checked from phase 10):
+Type grammar (parsed from phase 5; checked from phase 10 if the incremental
+type checker is chosen there, see OPEN(10)):
 
 ```
 Type     = Union ;
 Union    = Postfix { "|" Postfix } ;
 Postfix  = Primary { "?" } ;
 Primary  = NAME [ "<" Type { "," Type } ">" ]
-         | "fn" "(" [ Type { "," Type } ] ")" "->" Type [ "throws" [ NAME ] ]
+         | "fn" "(" [ Type { "," Type } ] ")" [ "->" Type ] [ "throws" [ NAME ] ]
          | "(" Type ")" ;
 ```
+
+Reading rules: the result type of a `fn` type extends as far right as possible,
+so `fn() -> int?` is a function returning `int?`; a nullable function type is
+written `(fn() -> int)?`. `throws` binds to the innermost `fn`: in
+`fn make() -> fn() -> int throws:` the returned function throws, not `make`;
+write `-> (fn() -> int) throws:` for the other meaning. `null` is not a type
+name.
 
 ### Conditions
 
@@ -345,20 +439,25 @@ fn add(a: List<float>, b: List<float>) -> List<float>: ...
 Nothing here is forgotten; each item is decided in the phase named, with
 examples, before any code for it is written.
 
-**Phase 7 (loops, functions):** range spelling (`..`/`..=` vs `..<` vs `range()`); lambda spelling and whether a block lambda exists; capture by reference or by value; are top-level `fn` visible before their definition.
+**Phase 3 (first code):** one binary with a built-in version table now, or a launcher that looks in `~/.arete/versions/` from the start.
 
-**Phase 9 (stage C syntax session):** string methods vs `len()`; string repeat `*` and substring `in`; collection literals, empty `{}`, `List` vs `MutableList`, method names (`add`/`append`); destructuring in `for`; `str()` conversion; `when` branch spellings and exhaustiveness; typed `throws`, what may be thrown, `finally`/`defer`, `rethrows`; `self` vs `this`; inheritance and override spelling; interface implementation spelling; data class method names; `enum` and `sealed`; explicit type arguments at call (`json<User>()` vs `json::<User>()`); reified vs erased generics; module alias and selective import; top-level code in modules; circular imports.
+**Phase 5 (variables):** shadowing: is a second `let x` in the same file an error (yes in the examples), and allowed in the REPL.
+
+**Phase 7 (loops, functions):** range spelling (`..`/`..=` vs `..<` vs `range()`); lambda spelling, a return type on lambdas, and whether a block lambda exists given that brackets suppress indentation; capture by reference or by value; are top-level `fn` visible before their definition; `not in` as one operator.
+
+**Phase 9 (stage C syntax session):** `when` branch bodies (expression only, or also `return`, `throw`, `break`, assignment) and block branches `-> :`; raw strings without interpolation; printing an `Error` value; data class destructuring; string methods vs `len()`; string repeat `*` and substring `in`; collection literals, empty `{}`, `List` vs `MutableList`, method names (`add`/`append`); destructuring in `for`; `str()` conversion; `when` branch spellings and exhaustiveness; typed `throws`, what may be thrown, `finally`/`defer`, `rethrows`; `self` vs `this`; inheritance and override spelling; interface implementation spelling; data class method names; `enum` and `sealed`; explicit type arguments at call (`json<User>()` vs `json::<User>()`); reified vs erased generics; module alias and selective import; top-level code in modules; circular imports.
+
+**Phase 10 (types):** incremental type checker from phase 10 (recommended) or one block after stage C as in the PDF.
 
 **Phase 19 (rights session):** right names; static (lexical) vs dynamic rights model; transitive rights; source of a package's requirements; standard library naming; rights of foreign code.
 
-**Phase 26 (runtime session):** cycles under reference counting; task scheduler model; channel API and `select`; macro call marker; pointer syntax; VM architecture; dependency policy.
+**Phase 26 (runtime session):** cycles under reference counting, and the fact that a cycle collector means short pauses, which revises the PDF promise "no GC pauses"; deterministic destructors; task scheduler model; does `spawn` return a handle, is there `join`, what happens to `throws` inside `spawn`; channel API and `select`; macro call marker; pointer syntax (`*int` collides with `**`); VM architecture; dependency policy.
 
 ---
 
 ## 7. Example programs
 
-All in `examples/pending/`. A file moves to `tests/` when its phase is reached
-and it passes.
+All in `examples/pending/`. A file moves to `examples/` with a generated `.expected` file when its phase is reached and it passes (see section 2.2).
 
 | # | File | Shows | Runs after phase |
 |---|---|---|---|

@@ -1,5 +1,6 @@
 arete 0.1
 # runs-after: phase 13
+# OPEN(9): range pattern spelling and branch bodies; other branch forms are P1-default
 
 fn describe(x: int) -> string:
     return when x:

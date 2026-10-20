@@ -11,7 +11,7 @@ print(v.age ?? 0)
 
 fn describe(user: User) -> string:
     if user.age != null:
-        return user.name + " is " + str(user.age)   # smart cast: age is int here
+        return user.name + " is " + str(user.age)   # smart cast: age is int here; OPEN(9): str()
     return user.name + ", age unknown"
 
 print(describe(u))

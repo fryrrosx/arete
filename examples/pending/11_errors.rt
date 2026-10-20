@@ -1,0 +1,30 @@
+arete 0.1
+# runs-after: phase 14
+
+fn divide(a: int, b: int) -> int throws:
+    if b == 0:
+        throw Error("division by zero")
+    return a // b
+
+fn safe_divide(a: int, b: int) -> int:
+    try:
+        return divide(a, b)
+    catch e:
+        print("caught: " + e.message)
+        return 0
+
+print(safe_divide(10, 2))
+print(safe_divide(1, 0))
+
+# OPEN(9): typed throws (`throws DivideError`), `finally` / `defer`
+
+# compile error if the next line is uncommented:
+# let x = divide(1, 0)
+# error: call to `divide` can throw, but the error is not handled
+#   --> 11_errors.rt:22:9
+#    = help: wrap it in `try`, or mark the enclosing function with `throws`
+
+# expected output:
+# 5
+# caught: division by zero
+# 0

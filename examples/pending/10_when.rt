@@ -1,0 +1,39 @@
+arete 0.1
+# runs-after: phase 13
+
+fn describe(x: int) -> string:
+    return when x:
+        0 -> "zero"
+        1, 2 -> "one or two"
+        in 3..10 -> "small"           # OPEN(9): range pattern spelling
+        else -> "big"
+
+print(describe(0))
+print(describe(2))
+print(describe(7))
+print(describe(99))
+
+let v: int | string = "hi"            # union type
+when v:
+    is int -> print("int " + str(v))
+    is string -> print("string " + v)
+
+let maybe: int? = null
+when maybe:
+    null -> print("age unknown")
+    else -> print("age " + str(maybe))
+
+let n = 5
+when:                                 # no subject: first true condition wins
+    n < 0 -> print("negative")
+    n % 2 == 1 -> print("odd")
+    else -> print("even")
+
+# expected output:
+# zero
+# one or two
+# small
+# big
+# string hi
+# age unknown
+# odd

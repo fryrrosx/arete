@@ -1,0 +1,16 @@
+# build output
+/arete
+/build/
+*.o
+*.a
+*.dSYM/
+
+# editors and OS
+.vscode/
+.idea/
+.DS_Store
+
+# secrets never go in
+.env
+*.pem
+*.key

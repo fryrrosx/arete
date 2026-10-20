@@ -1,0 +1,7 @@
+arete 0.1
+# runs-after: phase 3
+
+print("Hello, World!")
+
+# expected output:
+# Hello, World!

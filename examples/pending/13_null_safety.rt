@@ -1,0 +1,37 @@
+arete 0.1
+# runs-after: phase 16
+
+data class User(name: string, age: int?)
+
+let u = User("Ann", null)
+let v = User("Bob", 30)
+
+print(u.age ?? 0)                 # default when null
+print(v.age ?? 0)
+
+fn describe(user: User) -> string:
+    if user.age != null:
+        return user.name + " is " + str(user.age)   # smart cast: age is int here
+    return user.name + ", age unknown"
+
+print(describe(u))
+print(describe(v))
+
+var maybe: User? = null
+print(maybe?.name)                # safe call: null if maybe is null
+maybe = v
+print(maybe?.name)
+
+# compile error if the next line is uncommented:
+# print(u.age + 1)
+# error: `u.age` has type `int?`, it may be null
+#   --> 13_null_safety.rt:26:7
+#    = help: check for null first, or use `??` or `?.`
+
+# expected output:
+# 0
+# 30
+# Ann, age unknown
+# Bob is 30
+# null
+# Bob

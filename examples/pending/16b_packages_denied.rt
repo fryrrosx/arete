@@ -1,0 +1,11 @@
+arete 0.1
+# runs-after: phase 20
+
+use "db@3.0" allow [net]             # db needs files too: this must not compile
+
+print("never printed")
+
+# expected compile error:
+# error: package "db@3.0" requires [net, fs], but only [net] allowed
+#   --> 16b_packages_denied.rt:4:1
+#    = help: use "db@3.0" allow [net, fs]

@@ -1,0 +1,25 @@
+arete 0.1
+# runs-after: phase 36
+
+import py numpy as np                 # OPEN(19): foreign code gets all rights?
+import js "lodash" as lodash
+import c "math.h" as cmath            # OPEN(19): namespace for C functions
+
+let a = np.array([1, 2, 3])
+print(a.sum())
+
+print(lodash.chunk([1, 2, 3, 4], 2))
+
+print(cmath.sqrt(16.0))
+
+unsafe:                               # OPEN(26): pointer syntax (phase 33)
+    let p: *int = alloc<int>(1)
+    *p = 7
+    print(*p)
+    free(p)
+
+# expected output:
+# 6
+# [[1, 2], [3, 4]]
+# 4.0
+# 7

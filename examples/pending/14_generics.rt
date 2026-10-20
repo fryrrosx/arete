@@ -1,0 +1,31 @@
+arete 0.1
+# runs-after: phase 17
+
+fn first<T>(xs: List<T>) -> T:
+    return xs[0]
+
+fn largest<T: Comparable>(a: T, b: T) -> T:
+    return a if a > b else b
+
+class Box<T>(value: T):
+    fn get() -> T:
+        return self.value
+
+print(first([10, 20, 30]))
+print(first(["a", "b"]))
+print(largest(3, 9))
+print(largest("pear", "apple"))
+
+let b = Box(42)                   # T inferred as int
+print(b.get() + 1)
+
+# compile error if the next line is uncommented:
+# largest(1, "x")
+# error: no single type `T` fits both `int` and `string`
+
+# expected output:
+# 10
+# a
+# 9
+# pear
+# 43

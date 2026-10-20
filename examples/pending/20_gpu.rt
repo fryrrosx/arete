@@ -1,0 +1,16 @@
+arete 0.1
+# runs-after: phase 38
+
+@gpu
+fn add(a: List<float>, b: List<float>) -> List<float>:
+    var out = List<float>()
+    for i in 0..a.len():
+        out.add(a[i] + b[i])
+    return out
+
+let xs = [1.0, 2.0, 3.0]
+let ys = [10.0, 20.0, 30.0]
+print(add(xs, ys))              # same result on CPU and GPU
+
+# expected output:
+# [11.0, 22.0, 33.0]

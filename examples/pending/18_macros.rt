@@ -1,0 +1,17 @@
+arete 0.1
+# runs-after: phase 31
+
+macro swap(a, b):
+    let tmp = a
+    a = b
+    b = tmp
+
+var tmp = 1          # same name as inside the macro: safe, hygiene keeps them apart
+var x = 2
+swap(tmp, x)         # OPEN(26): call marker, for example swap!(tmp, x)
+print(tmp)
+print(x)
+
+# expected output:
+# 2
+# 1

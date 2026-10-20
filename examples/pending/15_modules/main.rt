@@ -1,0 +1,16 @@
+arete 0.1
+# runs-after: phase 18
+
+use "./geometry"                  # OPEN(9): alias with `as`, selective import
+
+print(geometry.square(4))
+print(geometry.PI)
+
+# compile error if the next line is uncommented:
+# print(geometry.helper())
+# error: `helper` is private to module `geometry`
+#    = help: mark it `pub` in geometry.rt
+
+# expected output:
+# 16
+# 3.14159

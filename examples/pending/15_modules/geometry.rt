@@ -1,0 +1,11 @@
+arete 0.1
+# runs-after: phase 18
+# A module: everything is private unless marked pub.
+
+pub fn square(x: int) -> int:
+    return x * x
+
+fn helper() -> int:               # private to this file
+    return 1
+
+pub let PI = 3.14159

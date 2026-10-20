@@ -146,7 +146,7 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 
 | Module | Contents | Status |
 |---|---|---|
-| `io` | `print`, reading stdin | PDF / OPEN(21) |
+| `io` | `print`; reading a line from the user, candidate name `input()` as in Python | PDF / OPEN(21) |
 | `strings` | length, case, split, join, search, slices | PDF / OPEN(9) (names) |
 | `collections` | `List`, `Map`, `Set` and their methods | PDF / OPEN(9) (names) |
 | `math` | `sqrt`, `pow`, `abs`, `min`, `max`, constants | PDF / OPEN(21) |

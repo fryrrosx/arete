@@ -29,6 +29,8 @@ Full specification: `SPEC.md`. Grammar: `GRAMMAR.md`. Plan: `ROADMAP.md`.
 - Every compiler error shows file, line, column, the source line and a hint.
 
 ## How to work
+- In a new session read `HANDOFF.md` first: current state, the ritual as
+  practised, the code map and the mistakes already made.
 - Small steps, one feature at a time, in the order of `ROADMAP.md`.
 - Every feature gets a test in `tests/`: a `.rt` file plus a `.expected` file
   (exact stdout), and for errors a `.expected_error` file.

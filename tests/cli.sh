@@ -114,8 +114,9 @@ check long-prefix-chain 1 "expression nested too deeply" "$bin" run "$long"
 check chain-within-limit 0 "901" "$bin" run "$long"
 rm -f "$long"
 
-# Output that cannot be written is an error, not a silent success.
-if [ -w /dev/full ]; then
+# Output that cannot be written is an error, not a silent success. Only
+# where /dev/full really refuses writes (Linux; not macOS, not Git Bash).
+if [ -w /dev/full ] && ! printf x > /dev/full 2>/dev/null; then
     check write-failure 1 "cannot write output" sh -c "$bin run tests/hello.rt > /dev/full"
 fi
 

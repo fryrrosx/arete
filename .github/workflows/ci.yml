@@ -1,0 +1,16 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  build-and-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with warnings as errors
+        run: make build CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O1"
+      - name: Tests
+        run: make test
+      - name: Examples
+        run: make examples

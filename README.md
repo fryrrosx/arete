@@ -1,5 +1,7 @@
 # Arete
 
+[![ci](https://github.com/fryrrosx/arete/actions/workflows/ci.yml/badge.svg)](https://github.com/fryrrosx/arete/actions/workflows/ci.yml)
+
 **All the libraries in the world. Safely. Forever.**
 
 Arete is a new programming language, built from scratch. Syntax as simple as
@@ -22,11 +24,11 @@ Three ideas drive the design:
 
 ## Status
 
-Pre-0.1. Nothing runs yet. We are in the design phase: see `SPEC.md` for every
-decision made so far and `examples/pending/` for the programs the language must
-eventually run. The step-by-step plan is in `ROADMAP.md`.
+Pre-0.1, phase 3 of `ROADMAP.md`: `arete run hello.rt` prints a string, and
+that is all the language does so far. `SPEC.md` holds every decision made,
+`examples/pending/` the programs the language must eventually run.
 
-## Building (from phase 3 on)
+## Building
 
 ```
 make build      # builds ./arete

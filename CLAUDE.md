@@ -8,8 +8,8 @@ Full specification: `SPEC.md`. Grammar: `GRAMMAR.md`. Plan: `ROADMAP.md`.
 
 ## Implementation
 - Language: C11. Build with `make` (GNU make). Must compile with gcc, clang and MSVC.
-- Current stage: design (phases 0–2). From phase 3: tree-walking interpreter
-  (lexer -> parser -> AST -> interpreter).
+- Current stage: phase 3 done, phase 4 next (numbers and expressions).
+  Pipeline: lexer -> parser -> AST -> check -> tree-walking interpreter.
 - No external dependencies beyond the C standard library. Exceptions are decided
   explicitly in SPEC.md (vendored single-file C libraries from phase 8 at the earliest).
 - Platform-specific calls live only inside the `rt_*` runtime layer.

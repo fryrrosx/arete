@@ -1,0 +1,9 @@
+arete 0.1
+# Comments and blank lines produce no tokens.
+
+print("first")   # trailing comment
+print('second')  # single quotes are the same as double quotes
+
+print("tab\there")
+print("quote \" inside, backslash \\ too")
+print("unicode \u{1F600} and plain \u{41}")

@@ -183,7 +183,7 @@ Tokens the lexer produces, in the order they become relevant:
 
 | Phase | Tokens |
 |---|---|
-| 3 | `HEADER` (line 1, two integers), `IDENT`, `INT`, `STRING` (escapes `\n \t \\ \" \'` processed), `( )`, `NEWLINE`, `EOF`. Comments and blank lines produce no tokens |
+| 3 | `HEADER` (line 1, two integers), `IDENT`, `INT`, `STRING` (escapes `\n \t \\ \" \' \u{...}` processed), `( ) ,`, `NEWLINE`, `EOF`. Comments and blank lines produce no tokens |
 | 4 | `FLOAT`, `+ - * / // % **`, `,` |
 | 5 | `let var = : < > \| ? [ ] . fn ->` (the last three only inside type annotations) plus compound assignment |
 | 6 | `INDENT`, `DEDENT`, `if elif else and or not true false`, comparisons |
@@ -253,7 +253,13 @@ Decided messages so far:
 | Indent after a line without `:` | `unexpected indentation` | `` the previous line does not end with `:` `` |
 | Unterminated string | `unterminated string literal` | points at the opening quote |
 | Unknown character | `` unexpected character `§` `` | |
-| `print()` or `print(a, b)` | `print takes exactly one argument` | |
+| `print()` or `print(a, b)` | `print takes exactly one argument` | `write print(x)` |
+| `print(print(x))` | `` `print` returns nothing and cannot be used as a value `` | `call it on its own line` |
+| `shout(x)` | `` unknown function `shout` `` | `` only `print` exists so far `` (phase 3) |
+| `print(` at end of file | `` unclosed `(` `` | `` add the matching `)` `` |
+| `)` without `(` | `` unmatched `)` `` | |
+| `\q` in a string | `unknown escape sequence` | `valid escapes: \n \t \\ \" \' \u{...}` |
+| `print "x"` | `expected end of line, found string` | `a call needs parentheses: print("...")` |
 | `a < b < c` | `chained comparison is not allowed` | `` write `a < b and b < c` `` |
 | `x if c` without `else` | `conditional expression needs else` | |
 | Lone `}` in a string | `single } in string` | `write }}` |
@@ -439,7 +445,7 @@ fn add(a: List<float>, b: List<float>) -> List<float>: ...
 Nothing here is forgotten; each item is decided in the phase named, with
 examples, before any code for it is written.
 
-**Phase 3 (first code):** one binary with a built-in version table now, or a launcher that looks in `~/.arete/versions/` from the start.
+**Phase 3 (first code), decided P3-default:** one binary with a built-in version table; a launcher over `~/.arete/versions/` replaces the table in phase 22 without changing the command line.
 
 **Phase 5 (variables):** shadowing: is a second `let x` in the same file an error (yes in the examples), and allowed in the REPL.
 

@@ -534,14 +534,8 @@ static bool expect_end_of_line(Parser *p, const char *help) {
 /* block = NEWLINE INDENT statement { statement } DEDENT ; */
 static StmtList *parse_block(Parser *p, const char *opener) {
     char help[160];
-    if (p->repl) {
-        snprintf(help, sizeof help,
-                 "the REPL takes one line at a time until phase 8; put the `%s` and its body "
-                 "in a file and run `arete run file.rt`", opener);
-    } else {
-        snprintf(help, sizeof help,
-                 "the lines of the `%s` body go below it, indented by 4 spaces", opener);
-    }
+    snprintf(help, sizeof help,
+             "the lines of the `%s` body go below it, indented by 4 spaces", opener);
     if (!expect(p, TOK_NEWLINE, "end of line", "the body starts on the next line")) return NULL;
     if (!peek_is(p, TOK_INDENT)) {
         char summary[96];

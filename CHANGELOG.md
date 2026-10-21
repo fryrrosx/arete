@@ -4,6 +4,12 @@ One line per phase. Phase numbers refer to `ROADMAP.md`.
 
 ## Unreleased
 
+- Phase 8: the REPL takes blocks and open brackets across lines with the
+  `... ` prompt, a blank line closes a block as in Python; line editing and
+  history through vendored linenoise on Linux and macOS (the console's own
+  editor on Windows), history file `~/.arete_history`; a pseudo-terminal
+  test drives the interactive path.
+
 - Phases 4 to 6: numbers (`int`, `float`, hex, binary, underscores,
   exponents), the Pratt expression parser with `+ - * / // **`, unary
   minus, checked 64-bit arithmetic, string `+`; `let`/`var`, assignment

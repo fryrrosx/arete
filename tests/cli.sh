@@ -37,7 +37,7 @@ there" ] || [ "$code" -ne 0 ]; then
 fi
 
 # An error in the REPL is reported, the session continues, the exit code is 1.
-out="$(printf 'print(\nprint("ok")\n' | "$bin" 0.1 2>/dev/null)"
+out="$(printf 'print(1 // 0)\nprint("ok")\n' | "$bin" 0.1 2>/dev/null)"
 code=$?
 if [ "$out" != "ok" ] || [ "$code" -ne 1 ]; then
     echo "FAIL repl-continues-after-error (exit $code): $out"; fail=1
@@ -58,8 +58,36 @@ case "$err" in
 esac
 err="$(printf '  print("x")\n' | "$bin" 0.1 2>&1 >/dev/null)"
 case "$err" in
-    *"lines in the REPL start at column 1"*) ;;
+    *"the first line of a REPL input starts at column 1"*) ;;
     *) echo "FAIL repl-indent-hint: $err"; fail=1 ;;
+esac
+
+# Multi-line input: a block runs when the blank line closes it (phase 8).
+out="$(printf 'if true:\n    print(1)\n\n' | "$bin" 0.1 2>&1)"
+[ "$out" = "1" ] || { echo "FAIL repl-block: $out"; fail=1; }
+out="$(printf 'if true:\n    if false:\n        print("no")\n    else:\n        print("nested")\nprint("after")\n' | "$bin" 0.1 2>&1)"
+[ "$out" = "nested
+after" ] || { echo "FAIL repl-nested-block: $out"; fail=1; }
+out="$(printf 'let x = (1 +\n    2)\nprint(x)\n' | "$bin" 0.1 2>&1)"
+[ "$out" = "3" ] || { echo "FAIL repl-open-bracket: $out"; fail=1; }
+out="$(printf 'if true:\n    print(1 // 0)\n\nprint("alive")\n' | "$bin" 0.1 2>/dev/null)"
+code=$?
+[ "$out" = "alive" ] && [ "$code" -eq 1 ] || { echo "FAIL repl-error-in-block (exit $code): $out"; fail=1; }
+err="$(printf 'if true:\nprint(2)\n\n' | "$bin" 0.1 2>&1 >/dev/null)"
+case "$err" in
+    *"expected an indented block after \`if\`"*) ;;
+    *) echo "FAIL repl-block-not-indented: $err"; fail=1 ;;
+esac
+out="$(printf 'print("a:")\nprint(1)  # comment ending with a colon:\n' | "$bin" 0.1 2>&1)"
+[ "$out" = "a:
+1" ] || { echo "FAIL repl-colon-in-string-or-comment: $out"; fail=1; }
+
+# The interactive path (banner, prompts, history) through a pseudo-terminal.
+case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *) if command -v python3 >/dev/null 2>&1; then
+           python3 -I tests/repl_pty.py "$bin" || fail=1
+       fi ;;
 esac
 
 # Empty input and empty lines are fine.
@@ -100,8 +128,8 @@ case "$err" in
 esac
 err="$(printf 'if true:\n' | "$bin" 0.1 2>&1 >/dev/null)"
 case "$err" in
-    *"one line at a time until phase 8"*) ;;
-    *) echo "FAIL repl-block-hint: $err"; fail=1 ;;
+    *"expected an indented block after \`if\`"*) ;;
+    *) echo "FAIL repl-block-at-eof: $err"; fail=1 ;;
 esac
 
 # A very long operator chain is refused, not a crash.

@@ -16,6 +16,10 @@ build: $(BIN)
 $(BIN): $(OBJ)
 	$(CC) $(CSTD) $(CFLAGS) -o $@ $^ -lm
 
+# Vendored code is compiled as GNU C11 without our warning flags.
+src/linenoise.o: src/linenoise.c src/linenoise.h
+	$(CC) -std=gnu11 -O1 -w -c -o $@ $<
+
 src/%.o: src/%.c $(wildcard src/*.h)
 	$(CC) $(CSTD) $(CFLAGS) -c -o $@ $<
 

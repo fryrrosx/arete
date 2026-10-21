@@ -84,6 +84,67 @@ static int cmd_run(const char *path, Mode mode) {
     return code;
 }
 
+/* Appends `line` and a newline to the malloc'd buffer. */
+static char *buffer_append(char *buffer, size_t *length, const char *line) {
+    size_t n = strlen(line);
+    buffer = realloc(buffer, *length + n + 2);
+    if (buffer == NULL) {
+        fputs("fatal: out of memory\n", stderr);
+        exit(2);
+    }
+    memcpy(buffer + *length, line, n);
+    *length += n;
+    buffer[(*length)++] = '\n';
+    buffer[*length] = '\0';
+    return buffer;
+}
+
+static bool line_is_blank(const char *line) {
+    for (; *line != '\0'; line++) {
+        if (*line != ' ' && *line != '\t' && *line != '\r') return false;
+    }
+    return true;
+}
+
+/* Reads one complete input: a single statement, or a block and the lines
+ * that follow it until a blank line, as in Python. The continuation prompt
+ * `... ` shows while more lines are needed. Returns NULL at end of input
+ * when nothing was read. */
+static char *read_input(bool interactive) {
+    char *buffer = NULL;
+    size_t length = 0;
+    bool in_block = false;
+    for (;;) {
+        const char *prompt = buffer == NULL ? ">>> " : "... ";
+        bool cancelled = false;
+        char *line = interactive ? rt_read_line_prompt(prompt, &cancelled) : rt_read_line(stdin);
+        if (line == NULL && cancelled) {         /* Ctrl-C: drop this input, start over */
+            free(buffer);
+            buffer = NULL;
+            length = 0;
+            in_block = false;
+            continue;
+        }
+        if (line == NULL) {
+            if (interactive) fputc('\n', stdout);
+            return buffer;                       /* NULL when nothing was typed */
+        }
+        if (interactive && !line_is_blank(line)) rt_history_add(line);
+        bool blank = line_is_blank(line);
+        buffer = buffer_append(buffer, &length, line);
+        free(line);
+
+        Source src;
+        src.file = "<repl>";
+        src.text = buffer;
+        src.length = length;
+        bool incomplete = lexer_input_incomplete(&src, &in_block);
+        if (incomplete) continue;                /* `:` at the end, or an open bracket */
+        if (in_block && !blank) continue;        /* inside a block: wait for the blank line */
+        return buffer;
+    }
+}
+
 /* The session continues after an error; the exit code remembers that one
  * happened, as SPEC section 2.1 requires. */
 static int cmd_repl(const char *version) {
@@ -92,24 +153,21 @@ static int cmd_repl(const char *version) {
     Session s;
     s.checker = checker_new(true);
     s.interp = interp_new();
-    if (interactive) printf("Arete %s REPL\n", version);
+    if (interactive) {
+        printf("Arete %s REPL\n", version);
+        rt_history_load();
+    }
     for (;;) {
-        if (interactive) {
-            fputs(">>> ", stdout);
-            fflush(stdout);
-        }
-        char *line = rt_read_line(stdin);
-        if (line == NULL) {
-            if (interactive) fputc('\n', stdout);
-            break;
-        }
+        char *input = read_input(interactive);
+        if (input == NULL) break;
         Source src;
         src.file = "<repl>";
-        src.text = line;
-        src.length = strlen(line);
+        src.text = input;
+        src.length = strlen(input);
         if (run_source(&s, &src, true, MODE_RUN) != 0) status = 1;
-        free(line);
+        free(input);
     }
+    if (interactive) rt_history_save();
     interp_free(s.interp);
     checker_free(s.checker);
     return status;

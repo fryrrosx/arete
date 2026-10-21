@@ -13,10 +13,15 @@
 #define ARETE_ISATTY(fd) _isatty(fd)
 #define ARETE_FILENO(f) _fileno(f)
 #else
+#include <errno.h>
 #include <unistd.h>
+#include "linenoise.h"
 #define ARETE_ISATTY(fd) isatty(fd)
 #define ARETE_FILENO(f) fileno(f)
 #endif
+
+#define HISTORY_FILE ".arete_history"
+#define HISTORY_LINES 1000
 
 void rt_sys_init(void) {
 #if defined(_WIN32)
@@ -92,6 +97,60 @@ char *rt_read_line(FILE *in) {
     buffer[length] = '\0';
     return buffer;
 }
+
+#if defined(_WIN32)
+
+/* The Windows console edits lines and keeps a history on its own. */
+char *rt_read_line_prompt(const char *prompt, bool *cancelled) {
+    *cancelled = false;
+    fputs(prompt, stdout);
+    fflush(stdout);
+    return rt_read_line(stdin);
+}
+
+void rt_history_load(void) {}
+void rt_history_add(const char *line) { (void)line; }
+void rt_history_save(void) {}
+
+#else
+
+/* Path of the history file in the home directory, or NULL. */
+static char *history_path(void) {
+    const char *home = getenv("HOME");
+    if (home == NULL || home[0] == '\0') return NULL;
+    size_t n = strlen(home) + 1 + strlen(HISTORY_FILE) + 1;
+    char *path = malloc(n);
+    if (path == NULL) return NULL;
+    snprintf(path, n, "%s/%s", home, HISTORY_FILE);
+    return path;
+}
+
+char *rt_read_line_prompt(const char *prompt, bool *cancelled) {
+    *cancelled = false;
+    errno = 0;
+    char *line = linenoise(prompt);
+    if (line == NULL && errno == EAGAIN) *cancelled = true;   /* Ctrl-C */
+    return line;                                              /* malloc'd, free() it */
+}
+
+void rt_history_load(void) {
+    linenoiseHistorySetMaxLen(HISTORY_LINES);
+    char *path = history_path();
+    if (path != NULL) linenoiseHistoryLoad(path);
+    free(path);
+}
+
+void rt_history_add(const char *line) {
+    linenoiseHistoryAdd(line);
+}
+
+void rt_history_save(void) {
+    char *path = history_path();
+    if (path != NULL) linenoiseHistorySave(path);
+    free(path);
+}
+
+#endif
 
 bool rt_stdin_is_terminal(void) {
     return ARETE_ISATTY(ARETE_FILENO(stdin)) != 0;

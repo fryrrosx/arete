@@ -19,6 +19,18 @@ char *rt_read_file(const char *path, size_t *length_out);
  * Returns NULL at end of input when nothing was read. */
 char *rt_read_line(FILE *in);
 
+/* Reads one line of interactive input, showing `prompt` first. This is
+ * where line editing and history live when the terminal supports them.
+ * Returns NULL at end of input, or NULL with *cancelled set when the user
+ * pressed Ctrl-C. */
+char *rt_read_line_prompt(const char *prompt, bool *cancelled);
+
+/* History of interactive input: loaded from ~/.arete_history at the start
+ * of a session, extended line by line, saved at the end. */
+void rt_history_load(void);
+void rt_history_add(const char *line);
+void rt_history_save(void);
+
 /* True when standard input is an interactive terminal. */
 bool rt_stdin_is_terminal(void);
 

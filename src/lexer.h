@@ -14,4 +14,11 @@
 bool lexer_tokenize(const Source *src, bool expect_header,
                     TokenList *out, Diag *err);
 
+/* For the REPL: is this input incomplete, so that the next line still
+ * belongs to it? True when a bracket is still open or the last logical
+ * line ends with `:` (a block opener). `in_block` reports whether the
+ * input has opened a block at all, so the REPL knows to wait for the
+ * blank line that ends it. */
+bool lexer_input_incomplete(const Source *src, bool *in_block);
+
 #endif

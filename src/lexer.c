@@ -338,9 +338,9 @@ static bool lex_line_start(Lexer *lx) {
     }
 
     int top = lx->indent_stack[lx->indent_depth];
-    if (lx->repl && spaces > 0 && lx->indent_depth == 0) {
+    if (lx->repl && lx->line == 1 && spaces > 0) {
         diag_set(lx->err, lx->line, 1, "unexpected indentation", "this line is indented",
-                 "lines in the REPL start at column 1");
+                 "the first line of a REPL input starts at column 1");
         return false;
     }
     if (spaces > top) {
@@ -777,4 +777,29 @@ bool lexer_tokenize(const Source *src, bool expect_header,
     }
     emit_token(&lx, TOK_EOF, lx.line, lx.column, NULL, 0);
     return true;
+}
+
+bool lexer_input_incomplete(const Source *src, bool *in_block) {
+    TokenList tokens = {0};
+    Diag err = {0};
+    bool ok = lexer_tokenize(src, false, &tokens, &err);
+    bool incomplete = false;
+    *in_block = false;
+    if (!ok) {
+        /* Only an unclosed bracket means "keep typing"; any other error is
+         * reported when the input runs. */
+        incomplete = strcmp(err.summary, "unclosed `(`") == 0;
+    } else {
+        TokenKind before_newline = TOK_EOF;
+        TokenKind last = TOK_EOF;
+        for (size_t i = 0; i < tokens.count; i++) {
+            TokenKind k = tokens.items[i].kind;
+            if (k == TOK_NEWLINE && last == TOK_COLON) *in_block = true;
+            if (k == TOK_NEWLINE) before_newline = last;
+            if (k != TOK_NEWLINE && k != TOK_INDENT && k != TOK_DEDENT && k != TOK_EOF) last = k;
+        }
+        incomplete = (before_newline == TOK_COLON);
+    }
+    token_list_free(&tokens);
+    return incomplete;
 }

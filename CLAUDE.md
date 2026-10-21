@@ -8,11 +8,14 @@ Full specification: `SPEC.md`. Grammar: `GRAMMAR.md`. Plan: `ROADMAP.md`.
 
 ## Implementation
 - Language: C11. Build with `make` (GNU make). Must compile with gcc, clang and MSVC.
-- Current stage: phases 0-6 done, phase 7 next (loops, functions, closures,
-  resolver). Pipeline: lexer -> parser -> AST -> check -> tree-walking interpreter.
+- Current stage: phases 0-6 and 8 done, phase 7 next (loops, functions,
+  closures, resolver). Pipeline: lexer -> parser -> AST -> check -> tree-walking interpreter.
   The `%` operator is Karim's exercise and is intentionally not implemented.
-- No external dependencies beyond the C standard library. Exceptions are decided
-  explicitly in SPEC.md (vendored single-file C libraries from phase 8 at the earliest).
+- No external dependencies beyond the C standard library. The one exception
+  so far (decided by Karim in phase 8): `src/linenoise.c` and `src/linenoise.h`,
+  vendored from antirez/linenoise (BSD-2, see LICENSE-linenoise), compiled only
+  on POSIX, used only by the REPL. Vendored code is not edited beyond the
+  Windows guard at its top.
 - Platform-specific calls live only inside the `rt_*` runtime layer.
 
 ## Key language rules

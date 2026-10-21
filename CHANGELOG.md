@@ -4,6 +4,16 @@ One line per phase. Phase numbers refer to `ROADMAP.md`.
 
 ## Unreleased
 
+- Phases 4 to 6: numbers (`int`, `float`, hex, binary, underscores,
+  exponents), the Pratt expression parser with `+ - * / // **`, unary
+  minus, checked 64-bit arithmetic, string `+`; `let`/`var`, assignment
+  and compound assignment, the full type grammar parsed into `TypeExpr`,
+  a name checker with scopes; INDENT/DEDENT, `bool`, comparisons,
+  `and or not`, `if/elif/else`, `a if c else b`, block scoping;
+  `--dump-tokens` and `--dump-ast`; the REPL keeps names between lines;
+  examples 03 and 04 promoted; 100 file tests. `%` is left as the
+  phase-4 exercise.
+
 - Phase 3: `arete run` and the one-line REPL; version header check; lexer
   with positions, comments, BOM/CRLF, string escapes; parser, checker and
   tree-walking interpreter for `print("...")`; reference-counted `Value`

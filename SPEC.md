@@ -85,9 +85,9 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 | Indentation | Exactly 4 spaces per level. A tab character in indentation is an error. Inside `( [ {` newlines and indentation are ignored | P1 (4 spaces, no tabs) / P1-default (brackets) |
 | Identifiers | `[A-Za-z_][A-Za-z0-9_]*`. Convention: `snake_case` for variables and functions, `PascalCase` for types, `UPPER_CASE` for constants (not enforced) | P1 (ASCII) / P1-default (convention) |
 | `_` | A lone underscore is the discard name: `for _ in 1..=3:`. It cannot be read | P1-default |
-| Logical operators | The words `and`, `or`, `not`. Short-circuit | P1 |
-| Comparison | `== != < <= > >=` | PDF-implied |
-| Arithmetic | `+ - * / // % **`. `/` on two ints gives a `float`; `//` is floor division; `%` is remainder with the sign of the divisor (Python semantics); `**` is power, right-associative. Unary minus is an operator, not part of the number: `-7 // 2` is `(-7) // 2`, which is `-4`; `-2 ** 2` is `-(2 ** 2)`, which is `-4` (Python). Full precedence table in section 3 | P1 (`/`, `//`) / P1-default (`%` sign, `**`, unary minus) |
+| Logical operators | The words `and`, `or`, `not`. Short-circuit. Operands must be `bool`; `1 and true` is an error, there is no truthiness | P1 / P6-default (strict bool) |
+| Comparison | `== != < <= > >=`. `==` compares numbers by value across `int` and `float` (`1 == 1.0` is true), strings by content, and values of different kinds are simply unequal. Ordering works between two numbers or two strings; anything else is a runtime error (a compile error from phase 10). No chaining: `a < b < c` is an error | PDF-implied / P6-default (mixed numeric equality, ordering rules) |
+| Arithmetic | `+ - * / // % **`. `/` on two ints gives a `float`; `//` is floor division; `%` is remainder with the sign of the divisor (Python semantics); `**` is power, right-associative. Unary minus is an operator, not part of the number: `-7 // 2` is `(-7) // 2`, which is `-4`; `-2 ** 2` is `-(2 ** 2)`, which is `-4` (Python). Full precedence table in section 3. `+` on two strings concatenates them; mixing a string and a number is an error. Division by zero (`/`, `//`, and `0 ** -1`) is a runtime error. `int ** negative int` gives a float, like Python. `%` is not implemented yet (Karim's exercise after phase 4) | P1 (`/`, `//`) / P1-default (`%` sign, `**`, unary minus) / P4-default (string `+`, division by zero, `**` with a negative exponent) |
 | Compound assignment | `+= -= *= /= //= %=`. Assignment is a statement, never an expression | P1-default |
 | Bitwise operators | None in 0.1: `& ^ ~ << >>` are not operators, and `\|` is only the union-type separator. Revisited when a use case appears | P1-default |
 | Integer literals | Decimal, `_` allowed between digits: `1_000_000`. Hex `0xFF`, binary `0b101` | P1-default |
@@ -108,7 +108,7 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 | Nullability | Forbidden by default. `string?` is the nullable string type and the only spelling: `string \| null` is an error with hint `write string?`. `??` gives a default, `?.` is a safe call. Checks are static (compile time) | PDF (`?`, `??`) / P1-default (`?.`, single spelling) |
 | Strings | Immutable. `s[i]` is a one-character string (there is no `char` type); `s[a..b]` is a slice with the end excluded. Methods vs functions (`s.len()` vs `len(s)`), repeat with `*`, substring test with `in`: open | P1-default (indexing, slicing, no `char`) / OPEN(9) (methods, repeat, `in`) |
 | Collections | `List<T>` literal `[1, 2]`; `Map<K, V>` literal `{"a": 1}`, iterated in insertion order, `m[k]` and `k in m`; `Set<T>`. An empty generic container is written with an annotation, `var s: Set<string> = Set()`, so no example needs explicit type arguments at a call. Mutability of a `let`-bound collection, `List` vs `MutableList`, method names, the meaning of empty `{}`: open | P1-default (literals, insertion order, annotated empty form) / OPEN(9) (mutability, names, empty `{}`) |
-| Variables | `let` immutable (default), `var` mutable. Assigning to a `let` is a compile error | PDF |
+| Variables | `let` immutable (default), `var` mutable. Assigning to a `let` is a compile error; so is using a name before its declaration or declaring the same name twice in one scope. A block (the body of `if`, later loops and functions) is a scope: names declared inside end with it, and an inner block may shadow an outer name. In the REPL a name may be declared again | PDF / P5-default (declare once per scope, use after declaration) / P6-default (block scope, shadowing in inner blocks) |
 | Generics | `List<T>`, `fn first<T>(xs: List<T>) -> T`, `class Box<T>`, constraints `T: Comparable`. Explicit type arguments at a call (`json<User>()`) collide with `<` as comparison; the spelling is decided in phase 9, and the examples that need it are marked OPEN | PDF / OPEN(9) (explicit type arguments, reified vs erased) |
 | Memory | Automatic reference counting, no GC pauses. Manual memory only inside `unsafe` blocks | PDF |
 | Printing | `print` is a built-in function, not a keyword. It takes exactly one argument and writes it plus a newline; `print()` and `print(a, b)` are the error `print takes exactly one argument`. Floats print as the shortest decimal that reads back to the same value, always with a decimal point (`3.0`, `3.14159`). `true`, `false` and `null` print as those words. Lists print as `[1, 2, 3]`; strings inside lists print with double quotes, `["a", "b"]` | P1-default |
@@ -117,7 +117,7 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 
 | Area | Decision | Status |
 |---|---|---|
-| `if` | Statement: `if cond:` / `elif cond:` / `else:` | PDF (if) / P1-default (`elif`) |
+| `if` | Statement: `if cond:` / `elif cond:` / `else:`. The condition must be `bool`; `if 1:` is an error | PDF (if) / P1-default (`elif`) / P6-default (bool condition) |
 | Conditional expression | `a if cond else b`, as in Python | P1 |
 | `when` | Pattern matching, as in Kotlin. Works as a statement and as a value, but as a value only as the complete right-hand side of `let`, `var`, `=` or after `return`; never inside brackets and never as an operand. Branches: `value ->`, `v1, v2 ->`, `in range ->`, `is Type ->`, `null ->`, `else ->`; inside an `is Type` branch the subject has that type. Without a subject, branches are conditions. A missing branch is a runtime error until exhaustiveness checking arrives (phase 25) | PDF (when) / P1 (value position) / P1-default (branch spellings as in the examples) / OPEN(9) (range pattern spelling, branch bodies, block branches) |
 | Loops | `while cond:`; `for x in iterable:`; `break`, `continue` | PDF |
@@ -185,9 +185,9 @@ Tokens the lexer produces, in the order they become relevant:
 | Phase | Tokens |
 |---|---|
 | 3 | `HEADER` (line 1, two integers), `IDENT`, `INT`, `STRING` (escapes `\n \t \\ \" \' \u{...}` processed), `( ) ,`, `NEWLINE`, `EOF`. Comments and blank lines produce no tokens |
-| 4 | `FLOAT`, `+ - * / // % **`, `,` |
-| 5 | `let var = : < > \| ? [ ] . fn ->` (the last three only inside type annotations) plus compound assignment |
-| 6 | `INDENT`, `DEDENT`, `if elif else and or not true false`, comparisons |
+| 4 | `FLOAT`, `+ - * / // **` (`%` pending), `.` |
+| 5 | `let var = : < > \| ? [ ] fn -> throws` plus compound assignment `+= -= *= /= //=`; words reserved for later phases are the token `RESERVED` |
+| 6 | `INDENT`, `DEDENT`, `if elif else and or not true false`, `== != < <= > >=` |
 | 7 | `while for in break continue return => .. ..=`; `fn` and `->` in expressions |
 | 11 | String parts for interpolation: `STRING_START`, `STRING_PART`, `INTERP_START`, `INTERP_END`, `STRING_END` |
 | 12 | `{ }` as Map literal delimiters |
@@ -197,7 +197,7 @@ Rules that hold from phase 3 on:
 
 - Every token carries `line` and `column` (1-based). Error messages use them.
 - A logical line is a physical line, except that inside `( [ {` line breaks are ignored, so one logical line may span several physical lines. There is no backslash continuation. `NEWLINE` is emitted at the end of a logical line. Blank lines and lines holding only a comment produce no tokens and do not affect indentation.
-- The indentation stack starts at 0. A line indented deeper than the top of the stack by exactly 4 emits `INDENT`; shallower lines emit one `DEDENT` per level popped. Any other depth: `error: inconsistent indentation`. A deeper line after a line that does not end with `:` is `error: unexpected indentation`.
+- The indentation stack starts at 0. A line indented deeper than the top of the stack by exactly 4 emits `INDENT`; shallower lines emit one `DEDENT` per level popped. Any other depth: `error: inconsistent indentation`. The lexer does not know whether a block was expected; the parser reports `unexpected indentation` when an `INDENT` arrives where a statement should start, which also lets `if x` without `:` get its own message.
 - A tab in leading whitespace: `error: tab in indentation`, hint `use 4 spaces`.
 - A number is `INT` unless it contains `.` followed by a digit, or an exponent. `1..10` is `INT DOTDOT INT`.
 - The lexer never produces a `>>` token. When the type parser expects `>` and sees `>=` (as in `List<int>=[]` written without spaces) it consumes one `>` and leaves `=` as the next token.
@@ -265,6 +265,19 @@ Decided messages so far:
 | `x if c` without `else` | `conditional expression needs else` | |
 | Lone `}` in a string | `single } in string` | `write }}` |
 | `int \| null` | `null is not a type name` | `write int?` |
+| `1 / 0`, `1 // 0` | `division by zero` | runtime, with position |
+| `"a" + 1`, `"a" < 1` | `` cannot apply `+` to string and int `` | runtime until phase 10 |
+| `if 1:` | `` the condition of `if` must be bool, found int `` | `` compare explicitly, for example `x != 0` `` |
+| `not 1`, `1 and true` | `` operand of `not` must be bool, found int `` | same |
+| `let x = 1` twice | `` `x` is already declared `` | the line of the first declaration |
+| `let x` | `` `let` needs a value `` | `` write `let x = value` `` |
+| `let class = 1` | `` `class` is a reserved word `` | choose another name |
+| `if x` without `:` | `` expected `:`, found end of line `` | `` write `if condition:` `` |
+| `if x:` with nothing below | `` expected an indented block after `if` `` | |
+| `elif` after `else` | `` `elif` without a matching `if` `` | |
+| `else x:` | `` `else` takes no condition `` | |
+| `9223372036854775808` | `integer literal is too large` | |
+| `12abc` | `invalid number literal` | |
 | `{` in a string before phase 11 | `string interpolation comes in phase 11` | |
 
 | `"x"("y")` | `only a name can be called` | |
@@ -455,7 +468,7 @@ examples, before any code for it is written.
 
 **Phase 3 (first code), decided P3-default:** one binary with a built-in version table; a launcher over `~/.arete/versions/` replaces the table in phase 22 without changing the command line.
 
-**Phase 5 (variables):** shadowing: is a second `let x` in the same file an error (yes in the examples), and allowed in the REPL.
+**Phase 5 (variables), decided P5-default:** a second `let x` in the same scope is an error; allowed in the REPL. Type annotations are parsed and kept but not checked until phase 10.
 
 **Phase 7 (loops, functions):** range spelling (`..`/`..=` vs `..<` vs `range()`); lambda spelling, a return type on lambdas, and whether a block lambda exists given that brackets suppress indentation; capture by reference or by value; are top-level `fn` visible before their definition; `not in` as one operator.
 

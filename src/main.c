@@ -1,6 +1,8 @@
 /* main.c - the command line:
- *   arete run <file.rt>     run a file
- *   arete <version>         start the REPL for that language version
+ *   arete run <file.rt>                 run a file
+ *   arete run --dump-tokens <file.rt>   show the tokens instead
+ *   arete run --dump-ast <file.rt>      show the syntax tree instead
+ *   arete <version>                     start the REPL for that language version
  * Errors go to stderr; the exit code is 1 on any error. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,31 +10,51 @@
 
 #include "check.h"
 #include "diag.h"
+#include "dump.h"
 #include "interp.h"
 #include "lexer.h"
 #include "parser.h"
 #include "rt_sys.h"
 #include "version.h"
 
+typedef enum { MODE_RUN, MODE_DUMP_TOKENS, MODE_DUMP_AST } Mode;
+
+/* The state that outlives one source text: in the REPL, names and values
+ * must survive from one line to the next. */
+typedef struct {
+    Checker *checker;
+    Interp *interp;
+} Session;
+
 static void print_usage(FILE *out) {
     fprintf(out, "  usage: arete <version>\n");
-    fprintf(out, "         arete run <file.rt>\n");
+    fprintf(out, "         arete run [--dump-tokens | --dump-ast] <file.rt>\n");
     fprintf(out, "  installed: ");
     version_print_installed(out);
     fputc('\n', out);
 }
 
-/* Lexes, parses, checks and runs one source text. Returns the exit code. */
-static int run_source(const Source *src, bool repl_mode) {
+/* Lexes, parses, checks and runs (or dumps) one source text. */
+static int run_source(Session *s, const Source *src, bool repl_mode, Mode mode) {
     Diag err = {0};
     TokenList tokens = {0};
     Program *prog = NULL;
     int code = 1;
 
     if (!lexer_tokenize(src, !repl_mode, &tokens, &err)) goto done;
+    if (mode == MODE_DUMP_TOKENS) {
+        dump_tokens(&tokens, stdout);
+        code = 0;
+        goto done;
+    }
     prog = parse_program(&tokens, repl_mode, &err);
     if (prog == NULL) goto done;
-    if (check_program(prog, &err)) code = interp_run(prog);
+    if (mode == MODE_DUMP_AST) {
+        dump_program(prog, stdout);
+        code = 0;
+    } else if (check_program(s->checker, prog, &err)) {
+        code = interp_run(s->interp, prog, &err);
+    }
     program_free(prog);
 
 done:
@@ -41,7 +63,7 @@ done:
     return code;
 }
 
-static int cmd_run(const char *path) {
+static int cmd_run(const char *path, Mode mode) {
     size_t length = 0;
     char *text = rt_read_file(path, &length);
     if (text == NULL) {
@@ -52,7 +74,12 @@ static int cmd_run(const char *path) {
     src.file = path;
     src.text = text;
     src.length = length;
-    int code = run_source(&src, false);
+    Session s;
+    s.checker = checker_new(false);
+    s.interp = interp_new();
+    int code = run_source(&s, &src, false, mode);
+    interp_free(s.interp);
+    checker_free(s.checker);
     free(text);
     return code;
 }
@@ -62,6 +89,9 @@ static int cmd_run(const char *path) {
 static int cmd_repl(const char *version) {
     bool interactive = rt_stdin_is_terminal();
     int status = 0;
+    Session s;
+    s.checker = checker_new(true);
+    s.interp = interp_new();
     if (interactive) printf("Arete %s REPL\n", version);
     for (;;) {
         if (interactive) {
@@ -77,9 +107,11 @@ static int cmd_repl(const char *version) {
         src.file = "<repl>";
         src.text = line;
         src.length = strlen(line);
-        if (run_source(&src, true) != 0) status = 1;
+        if (run_source(&s, &src, true, MODE_RUN) != 0) status = 1;
         free(line);
     }
+    interp_free(s.interp);
+    checker_free(s.checker);
     return status;
 }
 
@@ -103,12 +135,16 @@ int main(int argc, char **argv) {
     }
     const char *arg = argv[1];
     if (strcmp(arg, "run") == 0) {
-        if (argc < 3) {
-            fprintf(stderr, "error: missing file\n  usage: arete run <file.rt>\n");
+        Mode mode = MODE_RUN;
+        int i = 2;
+        if (i < argc && strcmp(argv[i], "--dump-tokens") == 0) { mode = MODE_DUMP_TOKENS; i++; }
+        else if (i < argc && strcmp(argv[i], "--dump-ast") == 0) { mode = MODE_DUMP_AST; i++; }
+        if (i >= argc) {
+            fprintf(stderr, "error: missing file\n  usage: arete run [--dump-tokens | --dump-ast] <file.rt>\n");
             return 1;
         }
-        if (argc > 3) return unexpected_argument(argv[3]);
-        return cmd_run(argv[2]);
+        if (i + 1 < argc) return unexpected_argument(argv[i + 1]);
+        return cmd_run(argv[i], mode);
     }
     if (version_is_installed(arg)) {
         if (argc > 2) return unexpected_argument(argv[2]);

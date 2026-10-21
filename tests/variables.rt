@@ -1,0 +1,19 @@
+arete 0.1
+let name = "Arete"
+let year: int = 2026
+var counter = 0
+counter = counter + 1
+counter += 1
+counter *= 10
+counter -= 2
+counter //= 3
+let big = 1_000_000
+print(name)
+print(year)
+print(counter)
+print(big)
+var ratio = 1.0
+ratio /= 4
+print(ratio)
+let greeting = "hi " + name
+print(greeting)

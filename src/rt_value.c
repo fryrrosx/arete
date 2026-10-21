@@ -50,6 +50,27 @@ Value value_string(const char *chars, size_t length) {
     return v;
 }
 
+Value value_string_concat(Value a, Value b) {
+    ObjString *x = (ObjString *)a.as.obj;
+    ObjString *y = (ObjString *)b.as.obj;
+    size_t length = x->length + y->length;
+    ObjString *s = malloc(sizeof(ObjString) + length + 1);
+    if (s == NULL) {
+        fputs("fatal: out of memory\n", stderr);
+        exit(2);
+    }
+    s->obj.kind = OBJ_STRING;
+    s->obj.refcount = 1;
+    s->length = length;
+    memcpy(s->chars, x->chars, x->length);
+    memcpy(s->chars + x->length, y->chars, y->length);
+    s->chars[length] = '\0';
+    Value v;
+    v.kind = VAL_OBJ;
+    v.as.obj = &s->obj;
+    return v;
+}
+
 void value_retain(Value v) {
     if (v.kind == VAL_OBJ) v.as.obj->refcount++;
 }
@@ -65,7 +86,12 @@ void value_release(Value v) {
 static void print_float(double f, FILE *out) {
     if (isnan(f)) { fputs("nan", out); return; }
     if (isinf(f)) { fputs(f < 0 ? "-inf" : "inf", out); return; }
-    char buf[32];
+    char buf[40];
+    if (f == floor(f) && fabs(f) < 1e16) {
+        snprintf(buf, sizeof buf, "%.1f", f);       /* 1000.0, not 1e+03 */
+        fputs(buf, out);
+        return;
+    }
     for (int precision = 1; precision <= 17; precision++) {
         snprintf(buf, sizeof buf, "%.*g", precision, f);
         if (strtod(buf, NULL) == f) break;

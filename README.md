@@ -24,8 +24,8 @@ Three ideas drive the design:
 
 ## Status
 
-Pre-0.1, phase 3 of `ROADMAP.md`: `arete run hello.rt` prints a string, and
-that is all the language does so far. `SPEC.md` holds every decision made,
+Pre-0.1, phase 6 of `ROADMAP.md`: numbers, strings, `let`/`var`, `if/elif/else`,
+and nothing else yet. `SPEC.md` holds every decision made,
 `examples/pending/` the programs the language must eventually run.
 
 ## Building

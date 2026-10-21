@@ -3,6 +3,7 @@
 #   <name>.expected        byte-exact stdout, and the exit code must be 0
 #   <name>.expected_error  the program must fail (exit code 1) and stderr
 #                          must contain this text (the error's summary line)
+#   <name>.expected_ast    byte-exact output of `arete run --dump-ast`
 # Subdirectories are not entered. Exit code 1 if any test fails.
 set -u
 dir="${1:-tests}"
@@ -25,6 +26,16 @@ for src in "$dir"/*.rt; do
             echo "FAIL $name (exit $code)"
             diff "$base.expected" "$tmp" | sed 's/^/  /'
         fi
+    elif [ -f "$base.expected_ast" ]; then
+        "$bin" run --dump-ast "$src" > "$tmp" 2>/dev/null
+        code=$?
+        if [ "$code" -eq 0 ] && cmp -s "$tmp" "$base.expected_ast"; then
+            pass=$((pass + 1))
+        else
+            fail=$((fail + 1))
+            echo "FAIL $name --dump-ast (exit $code)"
+            diff "$base.expected_ast" "$tmp" | sed 's/^/  /'
+        fi
     elif [ -f "$base.expected_error" ]; then
         err="$("$bin" run "$src" 2>&1 >/dev/null)"
         code=$?
@@ -37,7 +48,7 @@ for src in "$dir"/*.rt; do
             echo "  got (exit $code): $err"
         fi
     else
-        echo "SKIP $name (no .expected or .expected_error)"
+        echo "SKIP $name (no .expected, .expected_ast or .expected_error)"
     fi
 done
 echo "$dir: passed $pass, failed $fail"

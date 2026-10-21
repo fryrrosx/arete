@@ -1,0 +1,4 @@
+arete 0.1
+if (1 +
+        2) == 3:
+    print("multi-line condition")

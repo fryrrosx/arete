@@ -59,6 +59,9 @@ Value value_float(double f);
 /* Copies `length` bytes into a new string with refcount 1. */
 Value value_string(const char *chars, size_t length);
 
+/* A new string holding a followed by b (both must be strings). */
+Value value_string_concat(Value a, Value b);
+
 void value_retain(Value v);
 void value_release(Value v);
 

@@ -1,0 +1,9 @@
+arete 0.1
+let a: int = 1
+let b: int? = 2
+let c: int | string = 3
+let d: List<int?> | string = 4
+let e: fn(int, string) -> bool throws = 5
+let f: (fn() -> int)? = 6
+let g: Map<string, List<int>>=7
+var h: fn(int) = 8

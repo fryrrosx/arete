@@ -18,22 +18,31 @@ program        = HEADER { statement } EOF ;                                   (3
 repl_line      = { statement } EOF ;                     what the REPL parses  (3)
 HEADER         = "arete" INT "." INT NEWLINE ;      checked before tokenizing  (3)
 
-statement      = let_stmt | assign_stmt | expr_stmt ;                        (3: expr_stmt only)
+statement      = let_stmt | assign_stmt | if_stmt | expr_stmt ;              (6)
+if_stmt        = "if" expression ":" block
+                 { "elif" expression ":" block } [ "else" ":" block ] ;    (6)
+block          = NEWLINE INDENT statement { statement } DEDENT ;            (6)
 let_stmt       = ( "let" | "var" ) IDENT [ ":" type ] "=" expression NEWLINE ; (5)
 assign_stmt    = IDENT assign_op expression NEWLINE ;                        (5)
-assign_op      = "=" | "+=" | "-=" | "*=" | "/=" | "//=" | "%=" ;             (5)
+assign_op      = "=" | "+=" | "-=" | "*=" | "/=" | "//=" ;          (5; `%=` pending)
 expr_stmt      = expression NEWLINE ;                                         (3)
 
-expression     = additive ;                      Pratt loop over this table   (4)
+expression     = ternary ;                                                    (6)
+ternary        = or [ "if" or "else" expression ] ;                            (6)
+or             = and { "or" and } ;                                            (6)
+and            = not { "and" not } ;                                           (6)
+not            = "not" not | comparison ;                                      (6)
+comparison     = additive [ ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) additive ] ; (6)
 additive       = multiplicative { ( "+" | "-" ) multiplicative } ;            (4)
-multiplicative = unary { ( "*" | "/" | "//" | "%" ) unary } ;                 (4)
+multiplicative = unary { ( "*" | "/" | "//" ) unary } ;               (4; `%` pending)
 unary          = "-" unary | power ;                                          (4)
 power          = postfix [ "**" unary ] ;                                     (4)
 postfix        = primary { call } ;              (3: callee must be IDENT, one call)
 call           = "(" [ arguments ] ")" ;                                      (3)
 arguments      = expression { "," expression } ;                              (3)
 primary        = STRING | IDENT                                               (3)
-               | INT | FLOAT | "(" expression ")" ;                           (4)
+               | INT | FLOAT | "(" expression ")"                             (4)
+               | "true" | "false" ;                                            (6)
 
 type           = union_type ;                                                 (5)
 union_type     = postfix_type { "|" postfix_type } ;                          (5)
@@ -43,8 +52,12 @@ primary_type   = IDENT [ "<" type { "," type } ">" ]                          (5
                | "(" type ")" ;
 ```
 
-In phase 3 `expression` is `postfix` directly; the Pratt loop of phase 4 sits
-between them and uses the precedence table in SPEC.md section 3.
+The levels from `or` down to `power` are one Pratt loop in `parse_binary`,
+driven by the table `INFIX` in `src/parser.c`, which mirrors the precedence
+table in SPEC.md section 3; `not` and unary `-` are prefix operators in
+`parse_prefix`; `ternary` is `parse_expression`. `comparison` has no
+repetition on purpose: a second comparison operator in a row is the error
+`chained comparison is not allowed`.
 
 ## Checks
 
@@ -55,7 +68,8 @@ start with the same token, or the parser needs more than one token of lookahead.
 |---|---|---|
 | statement | let_stmt | `let`, `var` |
 | statement | assign_stmt | IDENT |
-| statement | expr_stmt | STRING, IDENT, INT, FLOAT, `(`, `-` |
+| statement | if_stmt | `if` |
+| statement | expr_stmt | STRING, IDENT, INT, FLOAT, `(`, `-`, `not`, `true`, `false` |
 | primary | each alternative | STRING / IDENT / INT / FLOAT / `(` |
 | unary | `"-" unary` vs power | `-` vs first(primary) |
 | primary_type | each alternative | IDENT / `fn` / `(` |
@@ -75,8 +89,10 @@ and `2 ** -1` parses. `unary` is above `multiplicative` and below `power`, so
 `-7 // 2` is `(-7) // 2` and `-2 ** 2` is `-(2 ** 2)`, matching SPEC.md and
 `examples/pending/02_arithmetic.rt`.
 
-**What ends an expression.** NEWLINE, `)`, `,`, EOF. None of these can start
-an expression, so the Pratt loop stops without lookahead.
+**What ends an expression.** NEWLINE, `)`, `,`, `:`, `else`, EOF. None of
+these can start an expression, so the Pratt loop stops without lookahead.
+`if` after an expression starts the ternary form, which is why `x if c`
+without `else` is an error rather than two statements.
 
 ## Notes collected in phase 1
 

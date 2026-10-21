@@ -1,0 +1,8 @@
+arete 0.1
+let x = 1
+if true:
+    let x = 2
+    print(x)
+    let inner = "only here"
+    print(inner)
+print(x)

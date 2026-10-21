@@ -1,0 +1,8 @@
+arete 0.1
+if true:
+    print("a")
+
+    print("after a blank line")
+# comment at column 0 does not close the block
+    print("still inside")
+print("outside")

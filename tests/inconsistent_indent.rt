@@ -1,0 +1,4 @@
+arete 0.1
+if true:
+    print("a")
+  print("b")

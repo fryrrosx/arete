@@ -1,0 +1,2 @@
+arete 0.1
+print(1 if 2 else 3)

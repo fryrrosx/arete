@@ -11,8 +11,13 @@ One line per phase. Phase numbers refer to `ROADMAP.md`.
   a name checker with scopes; INDENT/DEDENT, `bool`, comparisons,
   `and or not`, `if/elif/else`, `a if c else b`, block scoping;
   `--dump-tokens` and `--dump-ast`; the REPL keeps names between lines;
-  examples 03 and 04 promoted; 100 file tests. `%` is left as the
-  phase-4 exercise.
+  examples 03 and 04 promoted. `%` is left as the phase-4 exercise.
+  Review round: expression depth limit (a long chain is an error, not a
+  crash), `not` refused as an operand of higher levels, number literals
+  of any length, exact int/float comparison above 2^53, Python-style
+  float printing and float floor division, `_` as the discard name,
+  clearer messages for a missing colon, shared allocation helpers;
+  135 file tests, `--dump-tokens` tested.
 
 - Phase 3: `arete run` and the one-line REPL; version header check; lexer
   with positions, comments, BOM/CRLF, string escapes; parser, checker and

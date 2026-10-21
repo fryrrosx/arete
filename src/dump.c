@@ -30,8 +30,9 @@ static void dump_string(const char *s, size_t n, FILE *out) {
 }
 
 /* Types print the way they are written: int, int?, int | string,
- * List<int>, fn(int) -> string throws. A function type inside a union or
- * under `?` gets parentheses, as GRAMMAR.md requires. */
+ * List<int>, fn(int) -> string throws. A function type or a union inside
+ * another type gets parentheses, so `(int | string)?` and `int | string?`
+ * never print the same. */
 static void dump_type(const TypeExpr *t, FILE *out, bool nested) {
     switch (t->kind) {
     case TYPE_NAME:
@@ -50,10 +51,12 @@ static void dump_type(const TypeExpr *t, FILE *out, bool nested) {
         fputc('?', out);
         break;
     case TYPE_UNION:
+        if (nested) fputc('(', out);
         for (size_t i = 0; i < t->item_count; i++) {
             if (i > 0) fputs(" | ", out);
             dump_type(t->items[i], out, true);
         }
+        if (nested) fputc(')', out);
         break;
     case TYPE_FN:
         if (nested) fputc('(', out);

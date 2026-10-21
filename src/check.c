@@ -4,12 +4,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "util.h"
+
 typedef struct {
     char *name;      /* owned */
     bool is_mutable;
     int line;        /* where it was declared */
 } Decl;
 
+/* Same shape as Env in env.c on purpose: this one exists at check time,
+ * that one at run time. The resolver of phase 7 will make them differ. */
 typedef struct Scope {
     struct Scope *parent;
     Decl *items;
@@ -25,11 +29,7 @@ struct Checker {
 /* ---- scopes ----------------------------------------------------------- */
 
 static Scope *scope_new(Scope *parent) {
-    Scope *s = calloc(1, sizeof *s);
-    if (s == NULL) {
-        fputs("fatal: out of memory\n", stderr);
-        exit(2);
-    }
+    Scope *s = xcalloc(sizeof *s);
     s->parent = parent;
     return s;
 }
@@ -63,33 +63,17 @@ static void scope_declare(Scope *s, const char *name, bool is_mutable, int line)
         return;
     }
     if (s->count == s->capacity) {
-        size_t cap = s->capacity == 0 ? 8 : s->capacity * 2;
-        Decl *grown = realloc(s->items, cap * sizeof(Decl));
-        if (grown == NULL) {
-            fputs("fatal: out of memory\n", stderr);
-            exit(2);
-        }
-        s->items = grown;
-        s->capacity = cap;
+        s->capacity = s->capacity == 0 ? 8 : s->capacity * 2;
+        s->items = xrealloc(s->items, s->capacity * sizeof(Decl));
     }
     Decl *d = &s->items[s->count++];
-    size_t n = strlen(name);
-    d->name = malloc(n + 1);
-    if (d->name == NULL) {
-        fputs("fatal: out of memory\n", stderr);
-        exit(2);
-    }
-    memcpy(d->name, name, n + 1);
+    d->name = xstrdup(name);
     d->is_mutable = is_mutable;
     d->line = line;
 }
 
 Checker *checker_new(bool repl_mode) {
-    Checker *c = calloc(1, sizeof *c);
-    if (c == NULL) {
-        fputs("fatal: out of memory\n", stderr);
-        exit(2);
-    }
+    Checker *c = xcalloc(sizeof *c);
     c->repl_mode = repl_mode;
     c->scope = scope_new(NULL);
     return c;
@@ -116,6 +100,11 @@ static bool check_expr(Checker *c, const Expr *e, bool used_as_value, Diag *err)
         return true;
 
     case EXPR_NAME:
+        if (strcmp(e->as.name.name, "_") == 0) {
+            diag_set(err, e->line, e->column, "`_` cannot be read",
+                     "`_` discards a value", "give it a real name if you need the value");
+            return false;
+        }
         if (scope_find(c->scope, e->as.name.name) == NULL) {
             char summary[160];
             snprintf(summary, sizeof summary, "unknown name `%s`", e->as.name.name);
@@ -179,6 +168,7 @@ static bool check_stmt(Checker *c, const Stmt *s, Diag *err) {
     case STMT_LET: {
         /* The value is checked first: `let x = x` must not see the new x. */
         if (!check_expr(c, s->as.let.value, true, err)) return false;
+        if (strcmp(s->as.let.name, "_") == 0) return true;     /* `_` is never declared */
         Decl *here = scope_find_here(c->scope, s->as.let.name);
         bool at_top = (c->scope->parent == NULL);
         if (here != NULL && !(c->repl_mode && at_top)) {

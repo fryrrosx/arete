@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "util.h"
+
 Value value_null(void) {
     Value v;
     v.kind = VAL_NULL;
@@ -34,11 +36,7 @@ Value value_float(double f) {
 }
 
 Value value_string(const char *chars, size_t length) {
-    ObjString *s = malloc(sizeof(ObjString) + length + 1);
-    if (s == NULL) {
-        fputs("fatal: out of memory\n", stderr);
-        exit(2);
-    }
+    ObjString *s = xmalloc(sizeof(ObjString) + length + 1);
     s->obj.kind = OBJ_STRING;
     s->obj.refcount = 1;
     s->length = length;
@@ -54,11 +52,7 @@ Value value_string_concat(Value a, Value b) {
     ObjString *x = (ObjString *)a.as.obj;
     ObjString *y = (ObjString *)b.as.obj;
     size_t length = x->length + y->length;
-    ObjString *s = malloc(sizeof(ObjString) + length + 1);
-    if (s == NULL) {
-        fputs("fatal: out of memory\n", stderr);
-        exit(2);
-    }
+    ObjString *s = xmalloc(sizeof(ObjString) + length + 1);
     s->obj.kind = OBJ_STRING;
     s->obj.refcount = 1;
     s->length = length;
@@ -81,23 +75,43 @@ void value_release(Value v) {
     if (--obj->refcount == 0) free(obj);
 }
 
-/* Shortest decimal that reads back to the same double, always with a
- * decimal point: 3.0, 3.5, 3.14159. */
+/* Floats print like Python's repr: the shortest digits that read back to
+ * the same value; plain notation with a decimal point when the exponent
+ * is between -4 and 15 (3.0, 0.0025, 123456789.123), exponent notation
+ * otherwise (1e+16, 2.5e-05, 5e-324). */
 static void print_float(double f, FILE *out) {
     if (isnan(f)) { fputs("nan", out); return; }
     if (isinf(f)) { fputs(f < 0 ? "-inf" : "inf", out); return; }
-    char buf[40];
-    if (f == floor(f) && fabs(f) < 1e16) {
-        snprintf(buf, sizeof buf, "%.1f", f);       /* 1000.0, not 1e+03 */
-        fputs(buf, out);
-        return;
-    }
-    for (int precision = 1; precision <= 17; precision++) {
-        snprintf(buf, sizeof buf, "%.*g", precision, f);
+    if (f == 0.0) { fputs(signbit(f) ? "-0.0" : "0.0", out); return; }
+
+    /* Shortest mantissa: the fewest significant digits that round-trip. */
+    char buf[48];
+    int digits = 1;
+    for (; digits <= 17; digits++) {
+        snprintf(buf, sizeof buf, "%.*e", digits - 1, f);
         if (strtod(buf, NULL) == f) break;
     }
-    fputs(buf, out);
-    if (strpbrk(buf, ".eE") == NULL) fputs(".0", out);
+    char *e = strchr(buf, 'e');
+    int exponent = (int)strtol(e + 1, NULL, 10);
+
+    if (exponent >= -4 && exponent < 16) {
+        int decimals = digits - 1 - exponent;
+        if (decimals < 0) decimals = 0;
+        snprintf(buf, sizeof buf, "%.*f", decimals, f);
+        fputs(buf, out);
+        if (strchr(buf, '.') == NULL) fputs(".0", out);
+        return;
+    }
+    /* Exponent form: mantissa without trailing zeros, exponent with a sign
+     * and at least two digits, as Python writes it. */
+    *e = '\0';
+    char *dot = strchr(buf, '.');
+    if (dot != NULL) {
+        char *end = buf + strlen(buf);
+        while (end > dot + 1 && end[-1] == '0') *--end = '\0';
+        if (end == dot + 1) *dot = '\0';
+    }
+    fprintf(out, "%se%c%02d", buf, exponent < 0 ? '-' : '+', exponent < 0 ? -exponent : exponent);
 }
 
 void value_print(Value v, FILE *out) {

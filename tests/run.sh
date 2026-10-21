@@ -4,6 +4,7 @@
 #   <name>.expected_error  the program must fail (exit code 1) and stderr
 #                          must contain this text (the error's summary line)
 #   <name>.expected_ast    byte-exact output of `arete run --dump-ast`
+#   <name>.expected_tokens byte-exact output of `arete run --dump-tokens`
 # Subdirectories are not entered. Exit code 1 if any test fails.
 set -u
 dir="${1:-tests}"
@@ -35,6 +36,16 @@ for src in "$dir"/*.rt; do
             fail=$((fail + 1))
             echo "FAIL $name --dump-ast (exit $code)"
             diff "$base.expected_ast" "$tmp" | sed 's/^/  /'
+        fi
+    elif [ -f "$base.expected_tokens" ]; then
+        "$bin" run --dump-tokens "$src" > "$tmp" 2>/dev/null
+        code=$?
+        if [ "$code" -eq 0 ] && cmp -s "$tmp" "$base.expected_tokens"; then
+            pass=$((pass + 1))
+        else
+            fail=$((fail + 1))
+            echo "FAIL $name --dump-tokens (exit $code)"
+            diff "$base.expected_tokens" "$tmp" | sed 's/^/  /'
         fi
     elif [ -f "$base.expected_error" ]; then
         err="$("$bin" run "$src" 2>&1 >/dev/null)"

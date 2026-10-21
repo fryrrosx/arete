@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "util.h"
 #include "version.h"
 
 #define MAX_PAREN_DEPTH 64
@@ -28,11 +29,6 @@ typedef struct {
     Diag *err;
 } Lexer;
 
-static void out_of_memory(void) {
-    fputs("fatal: out of memory\n", stderr);
-    exit(2);
-}
-
 /* ---- token list ------------------------------------------------------- */
 
 /* Appends a token. Side effect: any token except NEWLINE, INDENT, DEDENT
@@ -42,11 +38,8 @@ static void emit_token(Lexer *lx, TokenKind kind, int line, int column,
                        const char *text, size_t length) {
     TokenList *list = lx->out;
     if (list->count == list->capacity) {
-        size_t cap = list->capacity == 0 ? 64 : list->capacity * 2;
-        Token *grown = realloc(list->items, cap * sizeof(Token));
-        if (grown == NULL) out_of_memory();
-        list->items = grown;
-        list->capacity = cap;
+        list->capacity = list->capacity == 0 ? 64 : list->capacity * 2;
+        list->items = xrealloc(list->items, list->capacity * sizeof(Token));
     }
     Token *t = &list->items[list->count++];
     t->kind = kind;
@@ -54,12 +47,7 @@ static void emit_token(Lexer *lx, TokenKind kind, int line, int column,
     t->column = column;
     t->length = length;
     t->text = NULL;
-    if (text != NULL) {
-        t->text = malloc(length + 1);
-        if (t->text == NULL) out_of_memory();
-        memcpy(t->text, text, length);
-        t->text[length] = '\0';
-    }
+    if (text != NULL) t->text = xstrndup(text, length);
     if (kind != TOK_NEWLINE && kind != TOK_INDENT && kind != TOK_DEDENT && kind != TOK_EOF) {
         lx->line_has_tokens = true;
     }
@@ -268,11 +256,8 @@ typedef struct {
 
 static void buffer_push(Buffer *b, char c) {
     if (b->length + 1 >= b->capacity) {
-        size_t cap = b->capacity == 0 ? 32 : b->capacity * 2;
-        char *grown = realloc(b->data, cap);
-        if (grown == NULL) out_of_memory();
-        b->data = grown;
-        b->capacity = cap;
+        b->capacity = b->capacity == 0 ? 32 : b->capacity * 2;
+        b->data = xrealloc(b->data, b->capacity);
     }
     b->data[b->length++] = c;
 }
@@ -308,20 +293,35 @@ static bool buffer_push_utf8(Buffer *b, unsigned long code) {
  *                                    block was expected there)
  *   back to an enclosing level    -> one DEDENT per level
  *   anything else                 -> an error */
+typedef struct {
+    size_t end;        /* first byte after the leading whitespace */
+    int spaces;
+    int tab_column;    /* column of the first tab, 0 if none */
+    bool blank;        /* nothing but whitespace and maybe a comment */
+} Indent;
+
+static Indent measure_indent(const Lexer *lx) {
+    const char *text = lx->src->text;
+    size_t len = lx->src->length;
+    Indent m = { lx->pos, 0, 0, false };
+    while (m.end < len && (text[m.end] == ' ' || text[m.end] == '\t')) {
+        if (text[m.end] == '\t' && m.tab_column == 0) m.tab_column = (int)(m.end - lx->pos) + 1;
+        if (text[m.end] == ' ') m.spaces++;
+        m.end++;
+    }
+    m.blank = m.end >= len || text[m.end] == '\n' || text[m.end] == '\r' || text[m.end] == '#';
+    return m;
+}
+
 static bool lex_line_start(Lexer *lx) {
     const char *text = lx->src->text;
     size_t len = lx->src->length;
-    size_t p = lx->pos;
-    int spaces = 0;
-    int tab_column = 0;                         /* 0 means no tab seen */
-    while (p < len && (text[p] == ' ' || text[p] == '\t')) {
-        if (text[p] == '\t' && tab_column == 0) tab_column = (int)(p - lx->pos) + 1;
-        if (text[p] == ' ') spaces++;
-        p++;
-    }
+    Indent m = measure_indent(lx);
+    size_t p = m.end;
+    int spaces = m.spaces;
+    int tab_column = m.tab_column;
 
-    bool blank = p >= len || text[p] == '\n' || text[p] == '\r' || text[p] == '#';
-    if (blank) {
+    if (m.blank) {
         skip_to_line_end(lx);
         if (!at_end(lx)) advance(lx);           /* the newline itself */
         lx->at_line_start = !at_end(lx);
@@ -674,7 +674,7 @@ static bool lex_unexpected(Lexer *lx) {
         help = "identifiers use ASCII letters, digits and `_` for now";
     } else if (c < 0x80 && isprint(c)) {
         snprintf(summary, sizeof summary, "unexpected character `%c`", c);
-        if (c == '&' || c == '|') help = "`and` and `or` are words in Arete";
+        if (c == '&') help = "`and` is a word in Arete";
         if (c == '%') help = "`%` is not implemented yet";
         if (c == ';') help = "Arete has no `;`: one statement per line";
     } else {

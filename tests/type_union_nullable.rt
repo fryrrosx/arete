@@ -1,0 +1,4 @@
+arete 0.1
+let a: (int | string)? = 1
+let b: int | string? = 2
+let c: List<(int | string)?> = 3

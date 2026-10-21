@@ -84,7 +84,7 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 | Blocks | Indentation, no `;`. A line ending in `:` opens a block | PDF |
 | Indentation | Exactly 4 spaces per level. A tab character in indentation is an error. Inside `( [ {` newlines and indentation are ignored | P1 (4 spaces, no tabs) / P1-default (brackets) |
 | Identifiers | `[A-Za-z_][A-Za-z0-9_]*`. Convention: `snake_case` for variables and functions, `PascalCase` for types, `UPPER_CASE` for constants (not enforced) | P1 (ASCII) / P1-default (convention) |
-| `_` | A lone underscore is the discard name: `for _ in 1..=3:`. It cannot be read | P1-default |
+| `_` | A lone underscore is the discard name: `let _ = f()`, later `for _ in 1..=3:`. It is never declared, may be used any number of times in one scope, and cannot be read: `print(_)` is the error `` `_` cannot be read `` | P1-default |
 | Logical operators | The words `and`, `or`, `not`. Short-circuit. Operands must be `bool`; `1 and true` is an error, there is no truthiness | P1 / P6-default (strict bool) |
 | Comparison | `== != < <= > >=`. `==` compares numbers by value across `int` and `float` (`1 == 1.0` is true), strings by content, and values of different kinds are simply unequal. Ordering works between two numbers or two strings; anything else is a runtime error (a compile error from phase 10). No chaining: `a < b < c` is an error | PDF-implied / P6-default (mixed numeric equality, ordering rules) |
 | Arithmetic | `+ - * / // % **`. `/` on two ints gives a `float`; `//` is floor division; `%` is remainder with the sign of the divisor (Python semantics); `**` is power, right-associative. Unary minus is an operator, not part of the number: `-7 // 2` is `(-7) // 2`, which is `-4`; `-2 ** 2` is `-(2 ** 2)`, which is `-4` (Python). Full precedence table in section 3. `+` on two strings concatenates them; mixing a string and a number is an error. Division by zero (`/`, `//`, and `0 ** -1`) is a runtime error. `int ** negative int` gives a float, like Python. `%` is not implemented yet (Karim's exercise after phase 4) | P1 (`/`, `//`) / P1-default (`%` sign, `**`, unary minus) / P4-default (string `+`, division by zero, `**` with a negative exponent) |
@@ -111,7 +111,7 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 | Variables | `let` immutable (default), `var` mutable. Assigning to a `let` is a compile error; so is using a name before its declaration or declaring the same name twice in one scope. A block (the body of `if`, later loops and functions) is a scope: names declared inside end with it, and an inner block may shadow an outer name. In the REPL a name may be declared again | PDF / P5-default (declare once per scope, use after declaration) / P6-default (block scope, shadowing in inner blocks) |
 | Generics | `List<T>`, `fn first<T>(xs: List<T>) -> T`, `class Box<T>`, constraints `T: Comparable`. Explicit type arguments at a call (`json<User>()`) collide with `<` as comparison; the spelling is decided in phase 9, and the examples that need it are marked OPEN | PDF / OPEN(9) (explicit type arguments, reified vs erased) |
 | Memory | Automatic reference counting, no GC pauses. Manual memory only inside `unsafe` blocks | PDF |
-| Printing | `print` is a built-in function, not a keyword. It takes exactly one argument and writes it plus a newline; `print()` and `print(a, b)` are the error `print takes exactly one argument`. Floats print as the shortest decimal that reads back to the same value, always with a decimal point (`3.0`, `3.14159`). `true`, `false` and `null` print as those words. Lists print as `[1, 2, 3]`; strings inside lists print with double quotes, `["a", "b"]` | P1-default |
+| Printing | `print` is a built-in function, not a keyword. It takes exactly one argument and writes it plus a newline; `print()` and `print(a, b)` are the error `print takes exactly one argument`. Floats print like Python's `repr`: the shortest digits that read back to the same value, in plain notation with a decimal point when the decimal exponent is between -4 and 15 (`3.0`, `0.0025`, `123456789.123`, `1000000000000000.0`), and in exponent notation otherwise (`1e+16`, `2.5e-05`, `5e-324`). `-0.0`, `inf`, `nan` print as written. `true`, `false` and `null` print as those words. Lists print as `[1, 2, 3]`; strings inside lists print with double quotes, `["a", "b"]` | P1-default / P6-default (float format) |
 
 ### 2.5 Statements and expressions
 
@@ -202,6 +202,7 @@ Rules that hold from phase 3 on:
 - A number is `INT` unless it contains `.` followed by a digit, or an exponent. `1..10` is `INT DOTDOT INT`.
 - The lexer never produces a `>>` token. When the type parser expects `>` and sees `>=` (as in `List<int>=[]` written without spaces) it consumes one `>` and leaves `=` as the next token.
 - An empty file reports `missing version header` at position `1:1`.
+- Limits that keep every recursive pass inside the C stack: at most 64 nested parentheses, 63 nested blocks, and expressions at most 1000 operators deep (nesting and one operator chain both count). Each is a clear error, never a crash.
 
 Operator precedence, lowest to highest. Each later phase that adds an operator inserts a row here instead of inventing one.
 
@@ -211,7 +212,7 @@ Operator precedence, lowest to highest. Each later phase that adds an operator i
 | 2 | `a if c else b` | right-associative; the middle operand may not be a bare conditional |
 | 3 | `or` | |
 | 4 | `and` | |
-| 5 | `not` | prefix |
+| 5 | `not` | prefix; it cannot be the operand of a higher level: `1 == not x` is an error, write `1 == (not x)` |
 | 6 | `== != < <= > >= in is` | non-associative: `a < b < c` is an error |
 | 7 | `??` | right-associative |
 | 8 | `.. ..=` | non-associative |
@@ -248,7 +249,7 @@ Decided messages so far:
 | Tab in indentation | `tab in indentation` | `use 4 spaces` |
 | Bad indentation | `inconsistent indentation` | expected depth |
 | Package right missing | `package "http@2.1" requires [net, fs], but only [net] allowed` (lists everything the package needs) | the corrected `use` line |
-| Int overflow | `` integer overflow in `a + b` `` | runtime, with position |
+| Int overflow | `` integer overflow in `+` `` (the caret marks the operator) | runtime, with position |
 | File needs another version | `file requires Arete 1.0, this is Arete 0.1` | `run: arete install 1.0` |
 | Line 1 is not `arete <int>.<int>` | `malformed version header` | `` the first line must be exactly `arete 0.1` `` |
 | Indent after a line without `:` | `unexpected indentation` | `` the previous line does not end with `:` `` |
@@ -268,7 +269,13 @@ Decided messages so far:
 | `1 / 0`, `1 // 0` | `division by zero` | runtime, with position |
 | `"a" + 1`, `"a" < 1` | `` cannot apply `+` to string and int `` | runtime until phase 10 |
 | `if 1:` | `` the condition of `if` must be bool, found int `` | `` compare explicitly, for example `x != 0` `` |
-| `not 1`, `1 and true` | `` operand of `not` must be bool, found int `` | same |
+| `not 1` | `` operand of `not` must be bool, found int `` | `` compare explicitly, for example `x != 0` `` |
+| `1 and true` | `` left side of `and` must be bool, found int `` (also `right side of`, and `or`) | same |
+| `1 == not x` | `` `not` cannot be an operand here `` | `` add parentheses: `a == (not b)` `` |
+| 1000 operators deep | `expression nested too deeply` | `` split it into smaller steps with `let` `` |
+| `print(_)` | `` `_` cannot be read `` | give it a real name |
+| `true \| false` | `` expected `)`, found `|` `` | `` `|` only separates types; for logic write `or` `` |
+| `let x int = 5` | `` expected `=` or `:`, found identifier `` | `` a type annotation is written `let x: int = 5` `` |
 | `let x = 1` twice | `` `x` is already declared `` | the line of the first declaration |
 | `let x` | `` `let` needs a value `` | `` write `let x = value` `` |
 | `let class = 1` | `` `class` is a reserved word `` | choose another name |

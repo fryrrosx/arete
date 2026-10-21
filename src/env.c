@@ -4,12 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "util.h"
+
 Env *env_new(Env *parent) {
-    Env *env = calloc(1, sizeof *env);
-    if (env == NULL) {
-        fputs("fatal: out of memory\n", stderr);
-        exit(2);
-    }
+    Env *env = xcalloc(sizeof *env);
     env->parent = parent;
     return env;
 }
@@ -40,23 +38,11 @@ void env_define(Env *env, const char *name, Value value, bool is_mutable) {
         return;
     }
     if (env->count == env->capacity) {
-        size_t cap = env->capacity == 0 ? 8 : env->capacity * 2;
-        Binding *grown = realloc(env->items, cap * sizeof(Binding));
-        if (grown == NULL) {
-            fputs("fatal: out of memory\n", stderr);
-            exit(2);
-        }
-        env->items = grown;
-        env->capacity = cap;
+        env->capacity = env->capacity == 0 ? 8 : env->capacity * 2;
+        env->items = xrealloc(env->items, env->capacity * sizeof(Binding));
     }
     Binding *b = &env->items[env->count++];
-    size_t n = strlen(name);
-    b->name = malloc(n + 1);
-    if (b->name == NULL) {
-        fputs("fatal: out of memory\n", stderr);
-        exit(2);
-    }
-    memcpy(b->name, name, n + 1);
+    b->name = xstrdup(name);
     b->value = value;
     b->is_mutable = is_mutable;
 }

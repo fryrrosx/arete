@@ -8,6 +8,7 @@
 
 #include "arete_rt.h"
 #include "env.h"
+#include "util.h"
 
 struct Interp {
     Env *globals;
@@ -16,11 +17,7 @@ struct Interp {
 };
 
 Interp *interp_new(void) {
-    Interp *in = calloc(1, sizeof *in);
-    if (in == NULL) {
-        fputs("fatal: out of memory\n", stderr);
-        exit(2);
-    }
+    Interp *in = xcalloc(sizeof *in);
     in->globals = env_new(NULL);
     in->env = in->globals;
     return in;
@@ -96,10 +93,23 @@ static bool mul_checked(int64_t a, int64_t b, int64_t *out) {
     return true;
 }
 
-/* Floor division and remainder with Python's sign rules. */
+/* Floor division with Python's sign rules (the remainder, when Karim adds
+ * `%`, must satisfy a == (a // b) * b + a % b with the sign of b). */
 static int64_t floor_div(int64_t a, int64_t b) {
     int64_t q = a / b;
     if ((a % b != 0) && ((a < 0) != (b < 0))) q--;
+    return q;
+}
+
+/* Float floor division the way CPython does it, so that it stays
+ * consistent with a float `%` built on fmod: 1.0 // 0.1 is 9.0, not 10.0. */
+static double float_floor_div(double x, double y) {
+    double mod = fmod(x, y);
+    double div = (x - mod) / y;
+    if (mod != 0.0 && ((y < 0) != (mod < 0))) div -= 1.0;
+    if (div == 0.0) return copysign(0.0, x / y);
+    double q = floor(div);
+    if (div - q > 0.5) q += 1.0;
     return q;
 }
 
@@ -167,7 +177,7 @@ static bool arith(Interp *in, const Expr *at, TokenKind op, Value a, Value b, Va
     case TOK_STAR:  *out = value_float(x * y); return true;
     case TOK_SLASH_SLASH:
         if (y == 0.0) return fail(in, at, "division by zero", "the divisor is zero here", NULL);
-        *out = value_float(floor(x / y));
+        *out = value_float(float_floor_div(x, y));
         return true;
     case TOK_STAR_STAR:
         if (x == 0.0 && y < 0) return fail(in, at, "division by zero", "0 raised to a negative power", NULL);
@@ -180,10 +190,41 @@ static bool arith(Interp *in, const Expr *at, TokenKind op, Value a, Value b, Va
 
 /* ---- comparison ------------------------------------------------------- */
 
+/* Compares an int with a float exactly, without rounding the int to a
+ * double first (ints above 2^53 would collide). False for NaN. */
+static bool compare_int_float(int64_t i, double f, int *cmp) {
+    if (isnan(f)) return false;
+    if (f >= 9223372036854775808.0) { *cmp = -1; return true; }    /* f > every int */
+    if (f < -9223372036854775808.0) { *cmp = 1; return true; }
+    double whole = floor(f);
+    int64_t w = (int64_t)whole;
+    if (i < w) *cmp = -1;
+    else if (i > w) *cmp = 1;
+    else *cmp = (f > whole) ? -1 : 0;        /* same whole part: the fraction decides */
+    return true;
+}
+
+/* Orders two numbers: -1, 0 or 1 in *cmp. False when one is NaN. */
+static bool compare_numbers(Value a, Value b, int *cmp) {
+    if (a.kind == VAL_INT && b.kind == VAL_INT) {
+        *cmp = (a.as.integer > b.as.integer) - (a.as.integer < b.as.integer);
+        return true;
+    }
+    if (a.kind == VAL_INT) return compare_int_float(a.as.integer, b.as.number, cmp);
+    if (b.kind == VAL_INT) {
+        if (!compare_int_float(b.as.integer, a.as.number, cmp)) return false;
+        *cmp = -*cmp;
+        return true;
+    }
+    if (isnan(a.as.number) || isnan(b.as.number)) return false;
+    *cmp = (a.as.number > b.as.number) - (a.as.number < b.as.number);
+    return true;
+}
+
 static bool values_equal(Value a, Value b) {
     if (is_number(a) && is_number(b)) {
-        if (a.kind == VAL_INT && b.kind == VAL_INT) return a.as.integer == b.as.integer;
-        return as_double(a) == as_double(b);          /* 1 == 1.0 */
+        int cmp;
+        return compare_numbers(a, b, &cmp) && cmp == 0;    /* 1 == 1.0 */
     }
     if (a.kind != b.kind) return false;
     switch (a.kind) {
@@ -200,12 +241,8 @@ static bool values_equal(Value a, Value b) {
 /* Orders two numbers or two strings. False when they cannot be ordered. */
 static bool order(Value a, Value b, int *cmp) {
     if (is_number(a) && is_number(b)) {
-        if (a.kind == VAL_INT && b.kind == VAL_INT) {
-            *cmp = (a.as.integer > b.as.integer) - (a.as.integer < b.as.integer);
-        } else {
-            double x = as_double(a), y = as_double(b);
-            *cmp = (x > y) - (x < y);
-        }
+        if (compare_numbers(a, b, cmp)) return true;
+        *cmp = 2;                                  /* NaN: every ordering is false */
         return true;
     }
     if (a.kind == VAL_OBJ && b.kind == VAL_OBJ) {
@@ -226,10 +263,10 @@ static bool compare(Interp *in, const Expr *at, TokenKind op, Value a, Value b, 
     if (!order(a, b, &cmp)) return fail_operands(in, at, op, a, b);
     bool r = false;
     switch (op) {
-    case TOK_LESS: r = cmp < 0; break;
-    case TOK_LESS_EQUAL: r = cmp <= 0; break;
-    case TOK_GREATER: r = cmp > 0; break;
-    case TOK_GREATER_EQUAL: r = cmp >= 0; break;
+    case TOK_LESS: r = cmp == -1; break;
+    case TOK_LESS_EQUAL: r = cmp == -1 || cmp == 0; break;
+    case TOK_GREATER: r = cmp == 1; break;
+    case TOK_GREATER_EQUAL: r = cmp == 1 || cmp == 0; break;
     default: break;
     }
     *out = value_bool(r);
@@ -384,6 +421,10 @@ static bool exec_stmt(Interp *in, const Stmt *s) {
     case STMT_LET: {
         Value v;
         if (!eval(in, s->as.let.value, &v)) return false;
+        if (strcmp(s->as.let.name, "_") == 0) {
+            value_release(v);                      /* `_` discards the value */
+            return true;
+        }
         env_define(in->env, s->as.let.name, v, s->as.let.is_mutable);
         return true;
     }

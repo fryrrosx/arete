@@ -4,14 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void *xcalloc(size_t n) {
-    void *p = calloc(1, n);
-    if (p == NULL) {
-        fputs("fatal: out of memory\n", stderr);
-        exit(2);
-    }
-    return p;
-}
+#include "util.h"
 
 /* ---- types ------------------------------------------------------------ */
 
@@ -126,14 +119,8 @@ void stmt_list_init(StmtList *list) {
 
 void stmt_list_add(StmtList *list, Stmt *s) {
     if (list->count == list->capacity) {
-        size_t cap = list->capacity == 0 ? 8 : list->capacity * 2;
-        Stmt **grown = realloc(list->items, cap * sizeof(Stmt *));
-        if (grown == NULL) {
-            fputs("fatal: out of memory\n", stderr);
-            exit(2);
-        }
-        list->items = grown;
-        list->capacity = cap;
+        list->capacity = list->capacity == 0 ? 8 : list->capacity * 2;
+        list->items = xrealloc(list->items, list->capacity * sizeof(Stmt *));
     }
     list->items[list->count++] = s;
 }

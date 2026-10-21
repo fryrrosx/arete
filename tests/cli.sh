@@ -87,6 +87,38 @@ want='error: unexpected character `$`
    |            	^ here'
 [ "$err" = "$want" ] || { echo "FAIL caret-alignment:"; echo "$err"; fail=1; }
 
+# The REPL keeps names between lines, allows redeclaration, and a failed
+# declaration leaves a name without a value.
+out="$(printf 'let x = 1\nprint(x)\nlet x = "s"\nprint(x)\nvar n = 2\nn += 1\nprint(n)\n' | "$bin" 0.1 2>&1)"
+[ "$out" = "1
+s
+3" ] || { echo "FAIL repl-names-persist: $out"; fail=1; }
+err="$(printf 'let z = 1 // 0\nprint(z)\n' | "$bin" 0.1 2>&1 >/dev/null)"
+case "$err" in
+    *"division by zero"*"\`z\` has no value"*) ;;
+    *) echo "FAIL repl-failed-declaration: $err"; fail=1 ;;
+esac
+err="$(printf 'if true:\n' | "$bin" 0.1 2>&1 >/dev/null)"
+case "$err" in
+    *"one line at a time until phase 8"*) ;;
+    *) echo "FAIL repl-block-hint: $err"; fail=1 ;;
+esac
+
+# A very long operator chain is refused, not a crash.
+long="$(mktemp)"
+{ printf 'arete 0.1\nprint(1'; i=0; while [ $i -lt 1200 ]; do printf ' + 1'; i=$((i+1)); done; printf ')\n'; } > "$long"
+check long-chain 1 "expression nested too deeply" "$bin" run "$long"
+{ printf 'arete 0.1\nprint('; i=0; while [ $i -lt 1200 ]; do printf -- '-'; i=$((i+1)); done; printf '1)\n'; } > "$long"
+check long-prefix-chain 1 "expression nested too deeply" "$bin" run "$long"
+{ printf 'arete 0.1\nprint(1'; i=0; while [ $i -lt 900 ]; do printf ' + 1'; i=$((i+1)); done; printf ')\n'; } > "$long"
+check chain-within-limit 0 "901" "$bin" run "$long"
+rm -f "$long"
+
+# Output that cannot be written is an error, not a silent success.
+if [ -w /dev/full ]; then
+    check write-failure 1 "cannot write output" sh -c "$bin run tests/hello.rt > /dev/full"
+fi
+
 # Deep nesting is refused at 65 levels with a clear message.
 deep="$(mktemp)"
 { printf 'arete 0.1\nprint('; i=0; while [ $i -lt 64 ]; do printf '('; i=$((i+1)); done

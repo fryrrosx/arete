@@ -1,0 +1,4 @@
+arete 0.1
+let _ = 1
+let _ = 2
+print("discarded twice")

@@ -1,0 +1,5 @@
+arete 0.1
+if true:
+    if true:
+        print("in")
+print("out")

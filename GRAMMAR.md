@@ -1,15 +1,14 @@
 # Arete grammar (EBNF)
 
-Phase 2. Each rule below is one function in `src/parser.c`, or one loop inside
-its parent's function where the rule is only ever used in one place
-(`arguments` lives inside `parse_call`; binary operators become branches of
-the Pratt loop). Terminals in `UPPER_CASE` are tokens from
+Written in phase 2, grown since. Each rule below is one function in
+`src/parser.c`, or one loop inside its parent's function where the rule is
+only ever used in one place (`arguments` lives inside `parse_call`; binary
+operators become rows of the `INFIX` table of the Pratt loop). Terminals in `UPPER_CASE` are tokens from
 `src/lexer.c`. `{ }` means zero or more, `[ ]` means optional, `|` means or.
 
-The grammar covers the minimum named in ROADMAP phase 2: version header,
-numbers, strings, `+ - * / // % **`, parentheses, `let`/`var`, `print`.
-The right-hand column says which phase implements the rule; rules marked 3 are
-in the code now.
+The right-hand column says which phase implements the rule; rules marked 3
+to 6 are in the code now. `%` and `%=` are missing on purpose: they are the
+phase 4 exercise.
 
 ## Rules
 
@@ -57,7 +56,10 @@ driven by the table `INFIX` in `src/parser.c`, which mirrors the precedence
 table in SPEC.md section 3; `not` and unary `-` are prefix operators in
 `parse_prefix`; `ternary` is `parse_expression`. `comparison` has no
 repetition on purpose: a second comparison operator in a row is the error
-`chained comparison is not allowed`.
+`chained comparison is not allowed`. `not` is reachable only from `and`, so
+the parser refuses it as an operand of any higher level (`1 == not x`). The
+parser also refuses expressions more than 1000 operators deep, nesting and
+chains both counted, so later recursive passes never overflow the C stack.
 
 ## Checks
 
@@ -70,7 +72,8 @@ start with the same token, or the parser needs more than one token of lookahead.
 | statement | assign_stmt | IDENT |
 | statement | if_stmt | `if` |
 | statement | expr_stmt | STRING, IDENT, INT, FLOAT, `(`, `-`, `not`, `true`, `false` |
-| primary | each alternative | STRING / IDENT / INT / FLOAT / `(` |
+| primary | each alternative | STRING / IDENT / INT / FLOAT / `(` / `true` / `false` |
+| not | `"not" not` vs comparison | `not` vs first(comparison), which never contains `not` |
 | unary | `"-" unary` vs power | `-` vs first(primary) |
 | primary_type | each alternative | IDENT / `fn` / `(` |
 

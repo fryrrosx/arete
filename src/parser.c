@@ -7,30 +7,22 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "util.h"
+
+/* Deepest expression the parser accepts, counting both nesting and the
+ * length of one operator chain. Keeps every later recursive walk over the
+ * tree (check, eval, dump, free) safely inside the C stack. */
+#define MAX_EXPR_DEPTH 1000
+
 typedef struct {
     TokenList *tokens;
     size_t pos;
     bool repl;
+    int depth;         /* current expression nesting */
     Diag *err;
 } Parser;
 
 /* ---- helpers ---------------------------------------------------------- */
-
-static void *xmalloc(size_t n) {
-    void *p = malloc(n);
-    if (p == NULL) {
-        fputs("fatal: out of memory\n", stderr);
-        exit(2);
-    }
-    return p;
-}
-
-static char *copy_string(const char *s) {
-    size_t n = strlen(s);
-    char *c = xmalloc(n + 1);
-    memcpy(c, s, n + 1);
-    return c;
-}
 
 static Token *peek(const Parser *p) {
     return &p->tokens->items[p->pos];
@@ -67,6 +59,7 @@ static bool expect(Parser *p, TokenKind kind, const char *what, const char *help
     char summary[160];
     snprintf(summary, sizeof summary, "expected %s, found %s",
              what, token_kind_describe(t->kind));
+    if (t->kind == TOK_PIPE) help = "`|` only separates types; for logic write `or`";
     error_at(p, t, summary, "here", help);
     return false;
 }
@@ -81,25 +74,32 @@ static bool reserved_word_error(Parser *p, const Token *t) {
 
 /* ---- literals --------------------------------------------------------- */
 
-/* Converts the text of an INT token (any base, with underscores) with an
- * overflow check. */
-static bool parse_int_literal(Parser *p, const Token *t, int64_t *out) {
-    char clean[80];
+/* The literal's text without underscores, malloc'd. */
+static char *strip_underscores(const Token *t) {
+    char *clean = xmalloc(t->length + 1);
     size_t n = 0;
-    for (size_t i = 0; i < t->length && n + 1 < sizeof clean; i++) {
+    for (size_t i = 0; i < t->length; i++) {
         if (t->text[i] != '_') clean[n++] = t->text[i];
     }
     clean[n] = '\0';
+    return clean;
+}
+
+/* Converts the text of an INT token (any base) with an overflow check. */
+static bool parse_int_literal(Parser *p, const Token *t, int64_t *out) {
+    char *clean = strip_underscores(t);
     int base = 10;
     const char *digits = clean;
-    if (n > 2 && clean[0] == '0' && (clean[1] == 'x' || clean[1] == 'X')) { base = 16; digits = clean + 2; }
-    if (n > 2 && clean[0] == '0' && (clean[1] == 'b' || clean[1] == 'B')) { base = 2;  digits = clean + 2; }
+    if (clean[0] == '0' && (clean[1] == 'x' || clean[1] == 'X')) { base = 16; digits = clean + 2; }
+    if (clean[0] == '0' && (clean[1] == 'b' || clean[1] == 'B')) { base = 2;  digits = clean + 2; }
     errno = 0;
-    char *end = NULL;
-    unsigned long long v = strtoull(digits, &end, base);
-    if (errno == ERANGE || v > (unsigned long long)INT64_MAX || t->length + 1 >= sizeof clean) {
+    unsigned long long v = strtoull(digits, NULL, base);
+    bool too_large = (errno == ERANGE || v > (unsigned long long)INT64_MAX);
+    free(clean);
+    if (too_large) {
         error_at(p, t, "integer literal is too large", "does not fit in 64 bits",
-                 "the largest int is 9223372036854775807");
+                 "the largest int is 9223372036854775807; "
+                 "the smallest is written -9223372036854775807 - 1");
         return false;
     }
     *out = (int64_t)v;
@@ -107,15 +107,12 @@ static bool parse_int_literal(Parser *p, const Token *t, int64_t *out) {
 }
 
 static bool parse_float_literal(Parser *p, const Token *t, double *out) {
-    char clean[80];
-    size_t n = 0;
-    for (size_t i = 0; i < t->length && n + 1 < sizeof clean; i++) {
-        if (t->text[i] != '_') clean[n++] = t->text[i];
-    }
-    clean[n] = '\0';
+    char *clean = strip_underscores(t);
     errno = 0;
     double v = strtod(clean, NULL);
-    if (errno == ERANGE && isinf(v)) {
+    bool too_large = (errno == ERANGE && isinf(v));
+    free(clean);
+    if (too_large) {
         error_at(p, t, "float literal is too large", "does not fit in a 64-bit float", NULL);
         return false;
     }
@@ -127,15 +124,9 @@ static bool parse_float_literal(Parser *p, const Token *t, double *out) {
 
 static TypeExpr *parse_type(Parser *p);
 
-static bool type_list_add(TypeExpr *t, TypeExpr *item) {
-    TypeExpr **grown = realloc(t->items, (t->item_count + 1) * sizeof(TypeExpr *));
-    if (grown == NULL) {
-        fputs("fatal: out of memory\n", stderr);
-        exit(2);
-    }
-    t->items = grown;
+static void type_list_add(TypeExpr *t, TypeExpr *item) {
+    t->items = xrealloc(t->items, (t->item_count + 1) * sizeof(TypeExpr *));
     t->items[t->item_count++] = item;
-    return true;
 }
 
 /* Expects `>` in a type. `List<int>=[]` without spaces lexes as `>=`, so
@@ -154,15 +145,45 @@ static bool expect_close_angle(Parser *p) {
     return expect(p, TOK_GREATER, "`>`", "type arguments end with `>`");
 }
 
-/* primary_type = IDENT [ "<" type { "," type } ">" ]
- *              | "fn" "(" [ type { "," type } ] ")" [ "->" type ] [ "throws" [ IDENT ] ]
- *              | "(" type ")" ; */
+/* The "fn" alternative of primary_type:
+ *   "fn" "(" [ type { "," type } ] ")" [ "->" type ] [ "throws" [ IDENT ] ] */
+static TypeExpr *parse_fn_type(Parser *p) {
+    Token *kw = advance(p);
+    TypeExpr *ty = type_new(TYPE_FN, kw->line, kw->column);
+    if (!expect(p, TOK_LPAREN, "`(`", "a function type looks like fn(int) -> string")) {
+        type_free(ty);
+        return NULL;
+    }
+    if (!peek_is(p, TOK_RPAREN)) {
+        for (;;) {
+            TypeExpr *param = parse_type(p);
+            if (param == NULL) { type_free(ty); return NULL; }
+            type_list_add(ty, param);
+            if (peek_is(p, TOK_COMMA)) { advance(p); continue; }
+            break;
+        }
+    }
+    if (!expect(p, TOK_RPAREN, "`)`", NULL)) { type_free(ty); return NULL; }
+    if (peek_is(p, TOK_ARROW)) {
+        advance(p);
+        ty->inner = parse_type(p);
+        if (ty->inner == NULL) { type_free(ty); return NULL; }
+    }
+    if (peek_is(p, TOK_THROWS)) {
+        advance(p);
+        ty->throws = true;
+        if (peek_is(p, TOK_IDENT)) ty->throws_name = xstrdup(advance(p)->text);
+    }
+    return ty;
+}
+
+/* primary_type = IDENT [ "<" type { "," type } ">" ] | fn_type | "(" type ")" ; */
 static TypeExpr *parse_primary_type(Parser *p) {
     Token *t = peek(p);
     if (t->kind == TOK_IDENT) {
         advance(p);
         TypeExpr *ty = type_new(TYPE_NAME, t->line, t->column);
-        ty->name = copy_string(t->text);
+        ty->name = xstrdup(t->text);
         if (peek_is(p, TOK_LESS)) {
             advance(p);
             for (;;) {
@@ -176,35 +197,7 @@ static TypeExpr *parse_primary_type(Parser *p) {
         }
         return ty;
     }
-    if (t->kind == TOK_FN) {
-        advance(p);
-        TypeExpr *ty = type_new(TYPE_FN, t->line, t->column);
-        if (!expect(p, TOK_LPAREN, "`(`", "a function type looks like fn(int) -> string")) {
-            type_free(ty);
-            return NULL;
-        }
-        if (!peek_is(p, TOK_RPAREN)) {
-            for (;;) {
-                TypeExpr *param = parse_type(p);
-                if (param == NULL) { type_free(ty); return NULL; }
-                type_list_add(ty, param);
-                if (peek_is(p, TOK_COMMA)) { advance(p); continue; }
-                break;
-            }
-        }
-        if (!expect(p, TOK_RPAREN, "`)`", NULL)) { type_free(ty); return NULL; }
-        if (peek_is(p, TOK_ARROW)) {
-            advance(p);
-            ty->inner = parse_type(p);
-            if (ty->inner == NULL) { type_free(ty); return NULL; }
-        }
-        if (peek_is(p, TOK_THROWS)) {
-            advance(p);
-            ty->throws = true;
-            if (peek_is(p, TOK_IDENT)) ty->throws_name = copy_string(advance(p)->text);
-        }
-        return ty;
-    }
+    if (t->kind == TOK_FN) return parse_fn_type(p);
     if (t->kind == TOK_LPAREN) {
         advance(p);
         TypeExpr *inner = parse_type(p);
@@ -293,6 +286,12 @@ static const InfixRule *infix_rule(TokenKind kind) {
     return NULL;
 }
 
+static bool too_deep(Parser *p, const Token *at) {
+    error_at(p, at, "expression nested too deeply", "here",
+             "split it into smaller steps with `let`");
+    return true;
+}
+
 /* arguments = expression { "," expression } ;
  * call      = "(" [ arguments ] ")" ;
  * The "(" has been seen by the caller, not consumed. */
@@ -312,12 +311,7 @@ static Expr *parse_call(Parser *p, Expr *callee) {
             if (arg == NULL) goto fail;
             if (count == capacity) {
                 capacity = capacity == 0 ? 4 : capacity * 2;
-                Expr **grown = realloc(args, capacity * sizeof(Expr *));
-                if (grown == NULL) {
-                    fputs("fatal: out of memory\n", stderr);
-                    exit(2);
-                }
-                args = grown;
+                args = xrealloc(args, capacity * sizeof(Expr *));
             }
             args[count++] = arg;
             if (peek_is(p, TOK_COMMA)) {
@@ -368,8 +362,7 @@ static Expr *parse_primary(Parser *p) {
     case TOK_STRING:
         advance(p);
         e = expr_new(EXPR_STRING, t->line, t->column);
-        e->as.string.chars = xmalloc(t->length + 1);
-        memcpy(e->as.string.chars, t->text, t->length + 1);
+        e->as.string.chars = xstrndup(t->text, t->length);
         e->as.string.length = t->length;
         return e;
     case TOK_TRUE:
@@ -381,7 +374,7 @@ static Expr *parse_primary(Parser *p) {
     case TOK_IDENT:
         advance(p);
         e = expr_new(EXPR_NAME, t->line, t->column);
-        e->as.name.name = copy_string(t->text);
+        e->as.name.name = xstrdup(t->text);
         return e;
     case TOK_LPAREN: {
         advance(p);
@@ -418,9 +411,16 @@ static Expr *parse_postfix(Parser *p) {
 
 /* Prefix operators: `not` (level 5) and unary `-` (level 11). The operand
  * of `-` is parsed at level 11, so `-2 ** 2` is -(2 ** 2) and `-7 // 2`
- * is (-7) // 2, as SPEC.md section 3 requires. */
-static Expr *parse_prefix(Parser *p) {
+ * is (-7) // 2, as SPEC.md section 3 requires. `not` binds looser than
+ * every arithmetic and comparison operator, so it cannot be their operand:
+ * `1 == not x` is an error, as in the grammar. */
+static Expr *parse_prefix(Parser *p, int min_prec) {
     Token *t = peek(p);
+    if (t->kind == TOK_NOT && min_prec > PREC_NOT) {
+        error_at(p, t, "`not` cannot be an operand here", "`not` binds looser than this operator",
+                 "add parentheses: `a == (not b)`");
+        return NULL;
+    }
     if (t->kind == TOK_NOT || t->kind == TOK_MINUS) {
         advance(p);
         Expr *operand = parse_binary(p, t->kind == TOK_NOT ? PREC_NOT : PREC_UNARY);
@@ -435,12 +435,18 @@ static Expr *parse_prefix(Parser *p) {
 
 /* The Pratt loop: binary operators by precedence (GRAMMAR.md: additive,
  * multiplicative, power, comparison, and, or). */
-static Expr *parse_binary(Parser *p, int min_prec) {
-    Expr *left = parse_prefix(p);
+static Expr *parse_binary_inner(Parser *p, int min_prec) {
+    Expr *left = parse_prefix(p, min_prec);
+    int chain = 0;                       /* operators in a row at this level */
     while (left != NULL) {
         Token *t = peek(p);
         const InfixRule *rule = infix_rule(t->kind);
         if (rule == NULL || rule->prec < min_prec) break;
+        if (p->depth + ++chain > MAX_EXPR_DEPTH) {
+            too_deep(p, t);
+            expr_free(left);
+            return NULL;
+        }
         advance(p);
         Expr *right = parse_binary(p, rule->right_assoc ? rule->prec : rule->prec + 1);
         if (right == NULL) {
@@ -465,6 +471,17 @@ static Expr *parse_binary(Parser *p, int min_prec) {
     return left;
 }
 
+static Expr *parse_binary(Parser *p, int min_prec) {
+    if (++p->depth > MAX_EXPR_DEPTH) {
+        too_deep(p, peek(p));
+        p->depth--;
+        return NULL;
+    }
+    Expr *e = parse_binary_inner(p, min_prec);
+    p->depth--;
+    return e;
+}
+
 /* ternary = or [ "if" or "else" expression ] ;   expression = ternary ; */
 static Expr *parse_expression(Parser *p) {
     Expr *value = parse_binary(p, PREC_OR);
@@ -473,6 +490,13 @@ static Expr *parse_expression(Parser *p) {
     Expr *cond = parse_binary(p, PREC_OR);
     if (cond == NULL) {
         expr_free(value);
+        return NULL;
+    }
+    if (peek_is(p, TOK_IF)) {
+        error_at(p, peek(p), "the condition of a conditional expression cannot itself be conditional",
+                 "second `if` here", "put it in parentheses: `a if (b if c else d) else e`");
+        expr_free(value);
+        expr_free(cond);
         return NULL;
     }
     if (!peek_is(p, TOK_ELSE)) {
@@ -509,8 +533,15 @@ static bool expect_end_of_line(Parser *p, const char *help) {
 
 /* block = NEWLINE INDENT statement { statement } DEDENT ; */
 static StmtList *parse_block(Parser *p, const char *opener) {
-    char help[96];
-    snprintf(help, sizeof help, "the lines of the `%s` body go below it, indented by 4 spaces", opener);
+    char help[160];
+    if (p->repl) {
+        snprintf(help, sizeof help,
+                 "the REPL takes one line at a time until phase 8; put the `%s` and its body "
+                 "in a file and run `arete run file.rt`", opener);
+    } else {
+        snprintf(help, sizeof help,
+                 "the lines of the `%s` body go below it, indented by 4 spaces", opener);
+    }
     if (!expect(p, TOK_NEWLINE, "end of line", "the body starts on the next line")) return NULL;
     if (!peek_is(p, TOK_INDENT)) {
         char summary[96];
@@ -547,16 +578,10 @@ static Stmt *parse_if(Parser *p) {
         if (block == NULL) { expr_free(cond); goto fail; }
 
         size_t n = s->as.if_.count;
-        Expr **conds = realloc(s->as.if_.conds, (n + 1) * sizeof(Expr *));
-        StmtList **blocks = realloc(s->as.if_.blocks, (n + 1) * sizeof(StmtList *));
-        if (conds == NULL || blocks == NULL) {
-            fputs("fatal: out of memory\n", stderr);
-            exit(2);
-        }
-        s->as.if_.conds = conds;
-        s->as.if_.blocks = blocks;
-        conds[n] = cond;
-        blocks[n] = block;
+        s->as.if_.conds = xrealloc(s->as.if_.conds, (n + 1) * sizeof(Expr *));
+        s->as.if_.blocks = xrealloc(s->as.if_.blocks, (n + 1) * sizeof(StmtList *));
+        s->as.if_.conds[n] = cond;
+        s->as.if_.blocks[n] = block;
         s->as.if_.count = n + 1;
 
         if (peek_is(p, TOK_ELIF)) {
@@ -566,7 +591,11 @@ static Stmt *parse_if(Parser *p) {
         break;
     }
     if (peek_is(p, TOK_ELSE)) {
-        Token *e = advance(p);
+        advance(p);
+        if (peek_is(p, TOK_NEWLINE) || peek_is(p, TOK_EOF)) {
+            expect(p, TOK_COLON, "`:`", "write `else:`");
+            goto fail;
+        }
         if (!peek_is(p, TOK_COLON)) {
             error_at(p, peek(p), "`else` takes no condition", "expected `:` right after `else`",
                      "write `else:`, or `elif condition:` for another test");
@@ -575,7 +604,6 @@ static Stmt *parse_if(Parser *p) {
         advance(p);
         s->as.if_.otherwise = parse_block(p, "else");
         if (s->as.if_.otherwise == NULL) goto fail;
-        (void)e;
     }
     return s;
 
@@ -587,23 +615,32 @@ fail:
 /* let_stmt = ( "let" | "var" ) IDENT [ ":" type ] "=" expression NEWLINE ; */
 static Stmt *parse_let(Parser *p) {
     Token *kw = advance(p);
+    const char *word = kw->kind == TOK_VAR ? "var" : "let";
     Stmt *s = stmt_new(STMT_LET, kw->line, kw->column);
     s->as.let.is_mutable = (kw->kind == TOK_VAR);
     Token *name = peek(p);
     if (name->kind == TOK_RESERVED) { reserved_word_error(p, name); goto fail; }
-    if (!expect(p, TOK_IDENT, "a name", kw->kind == TOK_VAR ? "write `var name = value`"
-                                                            : "write `let name = value`")) goto fail;
-    s->as.let.name = copy_string(name->text);
+    char help[120];
+    snprintf(help, sizeof help, "write `%s name = value`", word);
+    if (!expect(p, TOK_IDENT, "a name", help)) goto fail;
+    s->as.let.name = xstrdup(name->text);
     if (peek_is(p, TOK_COLON)) {
         advance(p);
         s->as.let.type = parse_type(p);
         if (s->as.let.type == NULL) goto fail;
     }
     if (!peek_is(p, TOK_EQUAL)) {
-        char summary[120], help[120];
-        snprintf(summary, sizeof summary, "`%s` needs a value", kw->kind == TOK_VAR ? "var" : "let");
-        snprintf(help, sizeof help, "write `%s %s = value`", kw->kind == TOK_VAR ? "var" : "let", name->text);
-        error_at(p, peek(p), summary, "expected `=` here", help);
+        char summary[120];
+        if (peek_is(p, TOK_NEWLINE) || peek_is(p, TOK_EOF)) {
+            snprintf(summary, sizeof summary, "`%s` needs a value", word);
+            snprintf(help, sizeof help, "write `%s %s = value`", word, name->text);
+            error_at(p, peek(p), summary, "expected `=` here", help);
+        } else {
+            snprintf(summary, sizeof summary, "expected `=` or `:`, found %s",
+                     token_kind_describe(peek(p)->kind));
+            snprintf(help, sizeof help, "a type annotation is written `%s %s: int = 5`", word, name->text);
+            error_at(p, peek(p), summary, "here", help);
+        }
         goto fail;
     }
     advance(p);
@@ -627,7 +664,7 @@ static Stmt *parse_assign(Parser *p) {
     Token *name = advance(p);
     Token *op = advance(p);
     Stmt *s = stmt_new(STMT_ASSIGN, name->line, name->column);
-    s->as.assign.name = copy_string(name->text);
+    s->as.assign.name = xstrdup(name->text);
     s->as.assign.op = op->kind;
     s->as.assign.value = parse_expression(p);
     if (s->as.assign.value == NULL || !expect_end_of_line(p, NULL)) {
@@ -646,6 +683,8 @@ static Stmt *parse_expr_stmt(Parser *p) {
         help = "a call needs parentheses: print(\"...\")";
     } else if (peek_is(p, TOK_EQUAL)) {
         help = "only a name can be assigned to";
+    } else if (peek_is(p, TOK_COLON) && e->kind == EXPR_NAME) {
+        help = "to declare a variable write `let x: int = 5`";
     }
     if (!expect_end_of_line(p, help)) {
         expr_free(e);
@@ -676,9 +715,9 @@ static Stmt *parse_statement(Parser *p) {
                  "`else` must directly follow an `if` or `elif` block");
         return NULL;
     case TOK_INDENT:
+        /* An indented REPL line never gets here: the lexer rejects it. */
         error_at(p, t, "unexpected indentation", "this line is indented",
-                 p->repl ? "lines in the REPL start at column 1"
-                         : "the previous line does not end with `:`");
+                 "the previous line does not end with `:`");
         return NULL;
     case TOK_IDENT:
         if (is_assign_op(peek_at(p, 1)->kind)) return parse_assign(p);
@@ -695,6 +734,7 @@ Program *parse_program(TokenList *tokens, bool repl_mode, Diag *err) {
     p.tokens = tokens;
     p.pos = 0;
     p.repl = repl_mode;
+    p.depth = 0;
     p.err = err;
 
     Program *prog = program_new();

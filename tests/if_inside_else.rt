@@ -1,0 +1,14 @@
+arete 0.1
+if true:
+    if false:
+        print("no")
+    else:
+        print("inner else")
+# a comment between blocks
+else:
+    print("outer else")
+if false:
+    print("no")
+else:
+    if true:
+        print("if inside else")

@@ -22,7 +22,7 @@ static const Token *advance(Parser *p) {
     return t;
 }
 
-static bool check(const Parser *p, TokenKind kind) {
+static bool peek_is(const Parser *p, TokenKind kind) {
     return peek(p)->kind == kind;
 }
 
@@ -62,7 +62,7 @@ static Expr *parse_call(Parser *p, Expr *callee) {
     }
     Expr **args = NULL;
     size_t count = 0, capacity = 0;
-    if (!check(p, TOK_RPAREN)) {
+    if (!peek_is(p, TOK_RPAREN)) {
         for (;;) {
             Expr *arg = parse_expression(p);
             if (arg == NULL) goto fail;
@@ -76,7 +76,7 @@ static Expr *parse_call(Parser *p, Expr *callee) {
                 args = grown;
             }
             args[count++] = arg;
-            if (check(p, TOK_COMMA)) {
+            if (peek_is(p, TOK_COMMA)) {
                 advance(p);
                 continue;
             }
@@ -122,10 +122,10 @@ static Expr *parse_primary(Parser *p) {
     }
 }
 
-/* postfix = primary { call } ; */
+/* postfix = primary { call } ;       (phase 3: the callee must be a name) */
 static Expr *parse_postfix(Parser *p) {
     Expr *e = parse_primary(p);
-    while (e != NULL && check(p, TOK_LPAREN)) e = parse_call(p, e);
+    while (e != NULL && peek_is(p, TOK_LPAREN)) e = parse_call(p, e);
     return e;
 }
 
@@ -139,7 +139,7 @@ static Stmt *parse_expr_stmt(Parser *p) {
     Expr *e = parse_expression(p);
     if (e == NULL) return NULL;
     const char *help = NULL;
-    if (check(p, TOK_STRING) && e->kind == EXPR_NAME) {
+    if (peek_is(p, TOK_STRING) && e->kind == EXPR_NAME) {
         help = "a call needs parentheses: print(\"...\")";
     }
     if (!expect(p, TOK_NEWLINE, "end of line", help)) {
@@ -161,10 +161,13 @@ Program *parse_program(const TokenList *tokens, bool repl_mode, Diag *err) {
     p.pos = 0;
     p.err = err;
 
-    if (!repl_mode && !expect(&p, TOK_HEADER, "version header", NULL)) return NULL;
-
     Program *prog = program_new();
-    while (!check(&p, TOK_EOF)) {
+    if (!repl_mode) {
+        /* The lexer guarantees that a file's first token is the header. */
+        const Token *header = advance(&p);
+        snprintf(prog->edition, sizeof prog->edition, "%s", header->text);
+    }
+    while (!peek_is(&p, TOK_EOF)) {
         Stmt *s = parse_statement(&p);
         if (s == NULL) {
             program_free(prog);

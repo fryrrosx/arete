@@ -21,6 +21,10 @@ void version_print_installed(FILE *out);
  * `arete 2.0` (a version) from `arete frobnicate` (a typo). */
 bool version_looks_like(const char *s);
 
+/* True when `text` (one line, without or with its line end) has the exact
+ * shape of a version header. Used to catch a header on the wrong line. */
+bool version_line_looks_like_header(const char *text, size_t len);
+
 /* Checks that the line starting at byte `start` is exactly
  * `arete <major>.<minor>` for the version this toolchain implements.
  * On success stores the offset of the first byte after that line in

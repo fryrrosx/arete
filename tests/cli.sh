@@ -1,6 +1,6 @@
 #!/bin/sh
 # Command-line behaviour that tests/run.sh cannot express: arguments,
-# exit codes, the REPL fed through a pipe.
+# exit codes, the REPL fed through a pipe, the exact shape of an error.
 set -u
 bin="./arete"
 fail=0
@@ -17,26 +17,30 @@ check() {
     fi
 }
 
-check no-arguments      1 "version required"            "$bin"
-check no-arguments-usage 1 "installed: 0.1"             "$bin"
-check not-installed     1 "Arete 2.0 is not installed"  "$bin" 2.0
-check not-installed-hint 1 "arete install 2.0"          "$bin" 2.0
-check unknown-command   1 "unknown command"             "$bin" frobnicate
-check run-without-file  1 "usage: arete run"            "$bin" run
-check run-missing-file  1 "cannot open file"            "$bin" run tests/does_not_exist.rt
-check run-hello         0 "Hello, World!"               "$bin" run tests/hello.rt
+check no-arguments        1 "version required"            "$bin"
+check no-arguments-usage  1 "installed: 0.1"              "$bin"
+check not-installed       1 "Arete 2.0 is not installed"  "$bin" 2.0
+check not-installed-hint  1 "arete install 2.0"           "$bin" 2.0
+check unknown-command     1 "unknown command"             "$bin" frobnicate
+check run-without-file    1 "missing file"                "$bin" run
+check run-missing-file    1 "cannot open file"            "$bin" run tests/does_not_exist.rt
+check run-extra-argument  1 "unexpected argument \`extra\`" "$bin" run tests/hello.rt extra
+check repl-with-file      1 "to run a file: arete run tests/hello.rt" "$bin" 0.1 tests/hello.rt
+check run-hello           0 "Hello, World!"               "$bin" run tests/hello.rt
 
 # The REPL through a pipe: no banner, no prompt, one result per line.
 out="$(printf 'print("hi")\nprint("there")\n' | "$bin" 0.1 2>&1)"
+code=$?
 if [ "$out" != "hi
-there" ]; then
-    echo "FAIL repl-pipe: $out"; fail=1
+there" ] || [ "$code" -ne 0 ]; then
+    echo "FAIL repl-pipe (exit $code): $out"; fail=1
 fi
 
-# An error in the REPL is reported and the session continues.
+# An error in the REPL is reported, the session continues, the exit code is 1.
 out="$(printf 'print(\nprint("ok")\n' | "$bin" 0.1 2>/dev/null)"
-if [ "$out" != "ok" ]; then
-    echo "FAIL repl-continues-after-error: $out"; fail=1
+code=$?
+if [ "$out" != "ok" ] || [ "$code" -ne 1 ]; then
+    echo "FAIL repl-continues-after-error (exit $code): $out"; fail=1
 fi
 err="$(printf 'print(\n' | "$bin" 0.1 2>&1 >/dev/null)"
 case "$err" in
@@ -44,20 +48,51 @@ case "$err" in
     *) echo "FAIL repl-error-text: $err"; fail=1 ;;
 esac
 
-# A REPL line needs no version header, and typing one is just an error.
+# A REPL line needs no version header, and typing one gets a specific message.
 out="$(printf 'print("no header needed")\n' | "$bin" 0.1 2>&1)"
 [ "$out" = "no header needed" ] || { echo "FAIL repl-no-header: $out"; fail=1; }
 err="$(printf 'arete 0.1\n' | "$bin" 0.1 2>&1 >/dev/null)"
 case "$err" in
-    "error: "*) ;;
+    *"version header belongs on line 1 only"*"no header is needed in the REPL"*) ;;
     *) echo "FAIL repl-header-typed: $err"; fail=1 ;;
 esac
+err="$(printf '  print("x")\n' | "$bin" 0.1 2>&1 >/dev/null)"
+case "$err" in
+    *"lines in the REPL start at column 1"*) ;;
+    *) echo "FAIL repl-indent-hint: $err"; fail=1 ;;
+esac
 
-# Empty input and an empty line are fine.
+# Empty input and empty lines are fine.
 out="$(printf '' | "$bin" 0.1 2>&1)"
 [ "$out" = "" ] || { echo "FAIL repl-empty-input: $out"; fail=1; }
 out="$(printf '\n\nprint("after blanks")\n' | "$bin" 0.1 2>&1)"
 [ "$out" = "after blanks" ] || { echo "FAIL repl-blank-lines: $out"; fail=1; }
+
+# The exact shape of an error block (SPEC.md section 4).
+err="$("$bin" run tests/no_version.rt 2>&1 >/dev/null)"
+want='error: missing version header
+  --> tests/no_version.rt:1:1
+   |
+ 1 | print("Hello, World!")
+   | ^ expected `arete 0.1` here
+   = help: add `arete 0.1` at the top of the file'
+[ "$err" = "$want" ] || { echo "FAIL error-shape:"; echo "$err"; fail=1; }
+
+# The caret lands under the right character after a non-ASCII string and a tab.
+err="$("$bin" run tests/caret_after_utf8.rt 2>&1 >/dev/null)"
+want='error: unexpected character `$`
+  --> tests/caret_after_utf8.rt:2:15
+   |
+ 2 | print("éé")	$
+   |            	^ here'
+[ "$err" = "$want" ] || { echo "FAIL caret-alignment:"; echo "$err"; fail=1; }
+
+# Deep nesting is refused at 65 levels with a clear message.
+deep="$(mktemp)"
+{ printf 'arete 0.1\nprint('; i=0; while [ $i -lt 64 ]; do printf '('; i=$((i+1)); done
+  printf '"x"'; i=0; while [ $i -lt 65 ]; do printf ')'; i=$((i+1)); done; printf '\n'; } > "$deep"
+check deep-parens 1 "too many nested parentheses" "$bin" run "$deep"
+rm -f "$deep"
 
 if [ "$fail" -eq 0 ]; then
     echo "cli: all passed"

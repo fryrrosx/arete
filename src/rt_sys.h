@@ -7,6 +7,10 @@
 #include <stddef.h>
 #include <stdio.h>
 
+/* Once at start-up. On Windows this switches stdout and stderr to binary
+ * mode so that `\n` is written as one byte, like everywhere else. */
+void rt_sys_init(void);
+
 /* Reads a whole file into a malloc'd, NUL-terminated buffer.
  * Returns NULL if the file cannot be opened or read. */
 char *rt_read_file(const char *path, size_t *length_out);

@@ -85,6 +85,7 @@ void stmt_free(Stmt *s) {
 
 Program *program_new(void) {
     Program *p = xmalloc(sizeof *p);
+    p->edition[0] = '\0';
     p->stmts = NULL;
     p->count = p->capacity = 0;
     return p;

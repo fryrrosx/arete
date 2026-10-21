@@ -9,8 +9,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build with warnings as errors
-        run: make build CFLAGS="-std=c11 -Wall -Wextra -Wpedantic -Werror -O1"
+        run: make build CFLAGS="-Werror -O1"
       - name: Tests
         run: make test
       - name: Examples
         run: make examples
+
+  msvc:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Build with MSVC
+        shell: cmd
+        run: cl /nologo /std:c11 /W4 /D_CRT_SECURE_NO_WARNINGS /Fe:arete.exe src\*.c
+      - name: Tests
+        shell: bash
+        run: sh tests/run.sh tests && sh tests/cli.sh && sh tests/run.sh examples

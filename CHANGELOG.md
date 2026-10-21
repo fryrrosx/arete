@@ -8,7 +8,10 @@ One line per phase. Phase numbers refer to `ROADMAP.md`.
   with positions, comments, BOM/CRLF, string escapes; parser, checker and
   tree-walking interpreter for `print("...")`; reference-counted `Value`
   in `arete_rt.h`; 29 file tests and a CLI test script; `tests/promote.sh`;
-  example 01 promoted; CI on Linux and macOS.
+  example 01 promoted; CI on Linux and macOS, MSVC build on Windows.
+  Review round: version spelling compared as text (no leading zeros),
+  character-aware caret, byte-exact test comparison, REPL exit code,
+  header-on-wrong-line message, extra-argument errors, 17 more tests.
 - Phase 2: `GRAMMAR.md` with the EBNF for phases 3 to 5, first-token and
   left-recursion checks, associativity derivations.
 

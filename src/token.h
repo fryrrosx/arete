@@ -5,7 +5,7 @@
 #include <stddef.h>
 
 typedef enum {
-    TOK_HEADER,   /* line 1: arete <major>.<minor>; text is "major.minor" */
+    TOK_HEADER,   /* line 1: arete <major>.<minor>; text is the version it matched */
     TOK_IDENT,    /* text is the name */
     TOK_INT,      /* text is the digits as written (converted in phase 4) */
     TOK_STRING,   /* text is the string with escapes already processed */

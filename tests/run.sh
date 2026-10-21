@@ -1,12 +1,14 @@
 #!/bin/sh
 # Runs every <name>.rt directly inside the given directory and compares:
-#   <name>.expected        exact stdout, and the exit code must be 0
+#   <name>.expected        byte-exact stdout, and the exit code must be 0
 #   <name>.expected_error  the program must fail (exit code 1) and stderr
 #                          must contain this text (the error's summary line)
 # Subdirectories are not entered. Exit code 1 if any test fails.
 set -u
 dir="${1:-tests}"
 bin="./arete"
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
 pass=0
 fail=0
 for src in "$dir"/*.rt; do
@@ -14,16 +16,14 @@ for src in "$dir"/*.rt; do
     base="${src%.rt}"
     name="$(basename "$base")"
     if [ -f "$base.expected" ]; then
-        actual="$("$bin" run "$src" 2>/dev/null)"
+        "$bin" run "$src" > "$tmp" 2>/dev/null
         code=$?
-        expected="$(cat "$base.expected")"
-        if [ "$code" -eq 0 ] && [ "$actual" = "$expected" ]; then
+        if [ "$code" -eq 0 ] && cmp -s "$tmp" "$base.expected"; then
             pass=$((pass + 1))
         else
             fail=$((fail + 1))
             echo "FAIL $name (exit $code)"
-            echo "  expected: $expected"
-            echo "  actual:   $actual"
+            diff "$base.expected" "$tmp" | sed 's/^/  /'
         fi
     elif [ -f "$base.expected_error" ]; then
         err="$("$bin" run "$src" 2>&1 >/dev/null)"

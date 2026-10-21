@@ -30,19 +30,41 @@ bool version_looks_like(const char *s) {
     return *p == '\0';
 }
 
-/* Reads up to 6 decimal digits at *p into *value. Returns false if there is
- * no digit or too many. */
-static bool read_number(const char *text, size_t len, size_t *p, int *value) {
-    size_t digits = 0;
-    int v = 0;
-    while (*p < len && isdigit((unsigned char)text[*p])) {
-        if (++digits > 6) return false;
-        v = v * 10 + (text[*p] - '0');
-        (*p)++;
-    }
-    if (digits == 0) return false;
-    *value = v;
+/* Consumes a run of 1 to 6 digits at *p. A leading zero is allowed only for
+ * the number 0 itself: `0.01` is not `0.1`, the spelling is the version. */
+static bool read_digits(const char *text, size_t len, size_t *p) {
+    size_t start = *p;
+    while (*p < len && isdigit((unsigned char)text[*p])) (*p)++;
+    size_t digits = *p - start;
+    if (digits == 0 || digits > 6) return false;
+    if (digits > 1 && text[start] == '0') return false;
     return true;
+}
+
+/* The exact shape of a header line without its line end:
+ *   "arete" SP digits "." digits { SP }
+ * On success ver_start and ver_len cover the "<major>.<minor>" text. */
+static bool header_shape(const char *text, size_t len, size_t *ver_start, size_t *ver_len) {
+    if (len < 6 || strncmp(text, "arete ", 6) != 0) return false;
+    size_t p = 6;
+    size_t start = p;
+    if (!read_digits(text, len, &p)) return false;
+    if (p >= len || text[p] != '.') return false;
+    p++;
+    if (!read_digits(text, len, &p)) return false;
+    *ver_start = start;
+    *ver_len = p - start;
+    while (p < len) {
+        if (text[p] != ' ') return false;
+        p++;
+    }
+    return true;
+}
+
+bool version_line_looks_like_header(const char *text, size_t len) {
+    if (len > 0 && text[len - 1] == '\r') len--;
+    size_t start, n;
+    return header_shape(text, len, &start, &n);
 }
 
 bool version_check_header(const Source *src, size_t start,
@@ -72,29 +94,19 @@ bool version_check_header(const Source *src, size_t start,
         return false;
     }
 
-    /* Exact shape: "arete" SP digits "." digits { SP } */
-    bool well_formed = strncmp(text, "arete", 5) == 0;
-    size_t p = 5;
-    int major = 0, minor = 0;
-    if (well_formed) well_formed = p < len && text[p] == ' ';
-    if (well_formed) { p++; well_formed = read_number(text, len, &p, &major); }
-    if (well_formed) well_formed = p < len && text[p] == '.';
-    if (well_formed) { p++; well_formed = read_number(text, len, &p, &minor); }
-    while (well_formed && p < len) {
-        if (text[p] != ' ') well_formed = false;
-        p++;
-    }
-    if (!well_formed) {
+    size_t ver_start = 0, ver_len = 0;
+    if (!header_shape(text, len, &ver_start, &ver_len)) {
         diag_set(err, 1, 1, "malformed version header",
                  "not of the form `arete <major>.<minor>`",
                  "the first line must be exactly `arete " ARETE_LANG_VERSION "`");
         return false;
     }
 
-    char found[32];
-    snprintf(found, sizeof found, "%d.%d", major, minor);
-    if (strcmp(found, ARETE_LANG_VERSION) != 0) {
-        char summary[120], label[120], help[120];
+    /* Compare the version as written, not as a number. */
+    if (ver_len != strlen(ARETE_LANG_VERSION)
+        || strncmp(text + ver_start, ARETE_LANG_VERSION, ver_len) != 0) {
+        char found[16], summary[120], label[120], help[120];
+        snprintf(found, sizeof found, "%.*s", (int)ver_len, text + ver_start);
         snprintf(summary, sizeof summary,
                  "file requires Arete %s, this is Arete " ARETE_LANG_VERSION, found);
         snprintf(label, sizeof label, "this file is written for Arete %s", found);

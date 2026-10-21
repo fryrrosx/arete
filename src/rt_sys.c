@@ -8,6 +8,7 @@
 #include <string.h>
 
 #if defined(_WIN32)
+#include <fcntl.h>
 #include <io.h>
 #define ARETE_ISATTY(fd) _isatty(fd)
 #define ARETE_FILENO(f) _fileno(f)
@@ -16,6 +17,13 @@
 #define ARETE_ISATTY(fd) isatty(fd)
 #define ARETE_FILENO(f) fileno(f)
 #endif
+
+void rt_sys_init(void) {
+#if defined(_WIN32)
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stderr), _O_BINARY);
+#endif
+}
 
 char *rt_read_file(const char *path, size_t *length_out) {
     FILE *f = fopen(path, "rb");

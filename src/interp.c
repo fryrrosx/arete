@@ -1,7 +1,6 @@
 #include "interp.h"
 
 #include <stdio.h>
-#include <string.h>
 
 #include "arete_rt.h"
 
@@ -34,6 +33,9 @@ int interp_run(const Program *prog) {
         Value v = eval(prog->stmts[i]->expr);
         value_release(v);
     }
-    fflush(stdout);
+    if (fflush(stdout) != 0 || ferror(stdout)) {
+        fputs("error: cannot write output\n", stderr);
+        return 1;
+    }
     return 0;
 }

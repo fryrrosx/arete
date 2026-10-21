@@ -1,7 +1,9 @@
 # Arete grammar (EBNF)
 
-Phase 2. Each rule below is one function in `src/parser.c` (or one branch of
-the Pratt loop for binary operators). Terminals in `UPPER_CASE` are tokens from
+Phase 2. Each rule below is one function in `src/parser.c`, or one loop inside
+its parent's function where the rule is only ever used in one place
+(`arguments` lives inside `parse_call`; binary operators become branches of
+the Pratt loop). Terminals in `UPPER_CASE` are tokens from
 `src/lexer.c`. `{ }` means zero or more, `[ ]` means optional, `|` means or.
 
 The grammar covers the minimum named in ROADMAP phase 2: version header,
@@ -13,6 +15,7 @@ in the code now.
 
 ```
 program        = HEADER { statement } EOF ;                                   (3)
+repl_line      = { statement } EOF ;                     what the REPL parses  (3)
 HEADER         = "arete" INT "." INT NEWLINE ;      checked before tokenizing  (3)
 
 statement      = let_stmt | assign_stmt | expr_stmt ;                        (3: expr_stmt only)
@@ -26,7 +29,7 @@ additive       = multiplicative { ( "+" | "-" ) multiplicative } ;            (4
 multiplicative = unary { ( "*" | "/" | "//" | "%" ) unary } ;                 (4)
 unary          = "-" unary | power ;                                          (4)
 power          = postfix [ "**" unary ] ;                                     (4)
-postfix        = primary { call } ;                                           (3)
+postfix        = primary { call } ;              (3: callee must be IDENT, one call)
 call           = "(" [ arguments ] ")" ;                                      (3)
 arguments      = expression { "," expression } ;                              (3)
 primary        = STRING | IDENT                                               (3)

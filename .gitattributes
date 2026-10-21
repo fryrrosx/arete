@@ -1,0 +1,6 @@
+# Sources and tests are checked out with LF everywhere, so expected output
+# files match the interpreter's output on every platform.
+* text=auto eol=lf
+# These test inputs are byte-exact on purpose.
+tests/crlf.rt -text
+tests/bom.rt -text

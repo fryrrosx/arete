@@ -44,7 +44,8 @@ typedef struct {
 } Stmt;
 
 typedef struct {
-    Stmt **stmts;  /* owned array of owned statements */
+    char edition[16];  /* the version from line 1, "0.1"; empty for a REPL line */
+    Stmt **stmts;      /* owned array of owned statements */
     size_t count;
     size_t capacity;
 } Program;

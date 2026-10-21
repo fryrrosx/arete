@@ -61,7 +61,7 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 | Audience | Developers who share loudly: vibe-coders and Python developers who need speed | PDF |
 | Release | GitHub, MIT, builds for Linux/macOS/Windows via GitHub Actions, one-command install, docs site, VS Code extension, semver (0.1 then 1.0), a flagship project written in Arete, an online playground, announcement on Hacker News, r/ProgrammingLanguages, Discord, Twitter/X, YouTube, Reddit | PDF / OPEN(24) (what the flagship project is) |
 | Execution | Tree-walking interpreter and REPL for development (phase 3), bytecode VM (phase 27), native code via LLVM for release with `arete build` (phase 32). All three must give identical output on `tests/` | PDF / OPEN(26) (VM architecture) |
-| Command line | `arete run <file.rt>` runs a file. `arete <version>` starts the REPL: banner `Arete 0.1 REPL`, prompt `>>> `, continuation prompt `... `; when stdin is not a terminal there is no banner and no prompt. All errors go to stderr; the exit code is 1 on any error, 0 otherwise. `--dump-tokens` and `--dump-ast` arrive in phase 4 | PDF (run, REPL) / P1-default (stderr, exit code, no-terminal rule) |
+| Command line | `arete run <file.rt>` runs a file. `arete <version>` starts the REPL: banner `Arete 0.1 REPL`, prompt `>>> `, continuation prompt `... `; when stdin is not a terminal there is no banner and no prompt. All errors go to stderr; the exit code is 1 on any error, 0 otherwise; the REPL keeps running after an error and exits 1 at the end if any line failed. Extra command-line arguments are an error. `--dump-tokens` and `--dump-ast` arrive in phase 4 | PDF (run, REPL) / P1-default (stderr, exit code, no-terminal rule) / P3-default (REPL exit code, extra arguments) |
 
 ### 2.2 Source files and versions
 
@@ -70,6 +70,7 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 | Version header | Line 1 of every file is exactly `arete <major>.<minor>`. Nothing may precede it: no blank line, no comment, no shebang. Missing header is a compile error | PDF (header) / P1 (strict line 1) |
 | Header value now | `arete 0.1` during development. The header is the pinned language version. A 0.x toolchain runs only files with exactly the same `0.x` (minor versions break compatibility before 1.0). At the 1.0 release all files are updated once; from 1.0 on, a file `arete 1.a` runs on any toolchain `1.b` with b ≥ a. Every file of a program, imported modules included, is checked by the same rule, and all files of one program must declare the same version. The version is two decimal integers, never a float: `0.10` is not `0.1` | P1 |
 | Line endings and BOM | `\n` and `\r\n` are both line ends. A UTF-8 byte-order mark at the start of a file is skipped. Spaces after the header are allowed; anything else on line 1 is `malformed version header` | P1-default |
+| Missing vs malformed | A first line that begins with the word `arete` in any case, followed by a space, a tab or the line end, but is not exactly `arete <major>.<minor>`, is `malformed version header` (this includes leading zeros such as `0.01`, which is a different spelling and therefore a different version). Any other first line is `missing version header`. The same header on any later line, or typed into the REPL, is `version header belongs on line 1 only` | P3-default |
 | REPL | Starts only with a version: `arete 0.1`. `arete` alone: `error: version required`, lists installed versions. `arete 2.0` when absent: `error: Arete 2.0 is not installed`, hint `arete install 2.0` | PDF |
 | Entry point | Top-level statements run top to bottom, like a Python script. No `main` | P1 |
 | Comments | `#` to end of line. No block comments | PDF-implied / P1-default (no block comments) |
@@ -265,6 +266,13 @@ Decided messages so far:
 | Lone `}` in a string | `single } in string` | `write }}` |
 | `int \| null` | `null is not a type name` | `write int?` |
 | `{` in a string before phase 11 | `string interpolation comes in phase 11` | |
+
+| `"x"("y")` | `only a name can be called` | |
+| `arete 0.1` on line 2 or in the REPL | `version header belongs on line 1 only` | |
+| `arete run a.rt extra` | `` unexpected argument `extra` `` | usage |
+| stdout cannot be written | `cannot write output` | exit code 1 |
+
+The column in the `-->` line counts bytes from the start of the line, which is what editors expect. The caret is placed by characters, so it lands under the right symbol after tabs and non-ASCII text. Lines longer than 120 bytes are shown as a window around the error, marked with `...`.
 
 Comments in example files may abbreviate this block. A `.expected_error` file holds only the summary line; the test runner checks that stderr contains it.
 

@@ -115,8 +115,10 @@ check chain-within-limit 0 "901" "$bin" run "$long"
 rm -f "$long"
 
 # Output that cannot be written is an error, not a silent success. Only
-# where /dev/full really refuses writes (Linux; not macOS, not Git Bash).
-if [ -w /dev/full ] && ! printf x > /dev/full 2>/dev/null; then
+# where /dev/full really refuses writes: Linux. macOS has no /dev/full and
+# Git Bash on Windows emulates it inconsistently.
+case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) have_dev_full=0 ;; *) have_dev_full=1 ;; esac
+if [ "$have_dev_full" -eq 1 ] && [ -w /dev/full ] && ! printf x > /dev/full 2>/dev/null; then
     check write-failure 1 "cannot write output" sh -c "$bin run tests/hello.rt > /dev/full"
 fi
 

@@ -24,8 +24,9 @@ Three ideas drive the design:
 
 ## Status
 
-Pre-0.1, phase 6 of `ROADMAP.md`: numbers, strings, `let`/`var`, `if/elif/else`,
-and nothing else yet. `SPEC.md` holds every decision made,
+Pre-0.1, phases 0–6 and 8 of `ROADMAP.md`: numbers, strings, `let`/`var`,
+`if/elif/else`, and a REPL with multi-line input and history; no loops or
+functions yet (phase 7 is next). `SPEC.md` holds every decision made,
 `examples/pending/` the programs the language must eventually run.
 
 ## Building
@@ -36,7 +37,8 @@ make test       # runs tests/*.rt against tests/*.expected
 make examples   # runs every example whose phase is already reached
 ```
 
-Implementation language: C11, no dependencies beyond the C standard library.
+Implementation language: C11, no dependencies beyond the C standard library
+(the REPL's line editor is the vendored `linenoise`, BSD-2, POSIX only).
 
 ## License
 

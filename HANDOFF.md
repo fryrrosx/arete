@@ -16,15 +16,24 @@ Update it at the end of every phase.
   Do not implement them, even if asked to "finish phase 4";
   `tests/percent_not_yet.rt` pins the current message. After he does it,
   `examples/pending/02_arithmetic.rt` is promoted with `sh tests/promote.sh`.
-- Git tags `phase-01-spec` … `phase-08-repl` existed only in the previous
-  container: tag pushes are refused by the proxy (403). They are not on
-  GitHub; recreate locally if you need them.
+- Git tags (`phase-01-spec`, `phase-02-grammar`, `phase-03-hello`,
+  `phase-04-06-expressions`, `phase-08-repl`) are local only: pushing tags is
+  refused by the proxy (403). None are on GitHub.
 - The repository is public; making it private is Karim's manual step.
 - Karim's own first sketch is `examples/drafts/karim_01.rt`, reviewed in
   `examples/drafts/karim_01_review.md`.
 - Review notes from the phase 4–6 round were kept outside the repo; what
-  mattered was fixed in commit `5567975`. Phase 8 had a lighter review (one
-  reviewer on the REPL logic); any fixes are in the commits after `428b840`.
+  mattered was fixed in commit `5567975`.
+- Phases 4–6 count as done although the `%` exercise is still open: Karim
+  chose to go on to phase 8 first. The ROADMAP status line says so.
+
+### Open items (do these before or at the start of the next phase)
+
+- The phase 8 review round never finished (the session hit its usage limit).
+  Still owed: an independent read of `read_input` in `src/main.c`,
+  `lexer_input_incomplete` in `src/lexer.c`, and the history code in
+  `src/rt_sys.c`, with the inputs from §3 step 8 tried on the binary.
+- Karim's `%` exercise (see above).
 
 ## 2. Who Karim is and how he works
 
@@ -45,6 +54,14 @@ Update it at the end of every phase.
   answer it. Do not start work on the strength of a question.
 - At the end of a phase he expects a Russian walkthrough: how it works, why
   it is built that way, what went wrong on the way, and what his exercise is.
+  The exercise for the next phase is proposed in that walkthrough.
+- Ritual step 2 ("Karim writes the two tests before the code") was not
+  practised in phases 3–8: Claude wrote the tests, Karim decided syntax and
+  keeps the exercises. Ask him once whether he wants step 2 back.
+- How his exercise lands is not decided yet. Default: he commits it himself or
+  sends the diff; Claude reviews it; the `pending` notes in `GRAMMAR.md`
+  (lines for `%` and `%=`), the SPEC §2.3 row and `tests/percent_not_yet.*`
+  are then his to update, with help on request.
 
 ## 3. The ritual for one phase, as practised
 
@@ -61,24 +78,40 @@ done in phases 3–8.
    the tests to add, the exact error texts. Then build.
 4. One feature at a time; `make test` after each. Every feature gets a
    positive test (`tests/x.rt` + `tests/x.expected`, exact stdout) and a
-   negative one (`tests/y.rt` + `tests/y.expected_error`, exact stderr).
-   `tests/run.sh` compares byte for byte. Write an expected file from real
-   output only after reading that output and agreeing it is right.
+   negative one (`tests/y.rt` + `tests/y.expected_error`, one line that
+   stderr must contain, normally the error's summary line). `tests/run.sh`
+   compares `.expected`, `.expected_ast` and `.expected_tokens` byte for byte
+   and checks `.expected_error` as a substring; the exact shape of the error
+   block is pinned by `tests/cli.sh`. Write an expected file from real output
+   only after reading that output and agreeing it is right.
 5. `GRAMMAR.md` against the parser: every EBNF rule is one parser function;
    check first-token sets and left recursion for the new rules.
 6. Docs in the same commit: `SPEC.md` rows and statuses, `GRAMMAR.md`,
    the status line and phase note in `ROADMAP.md`, the "Unreleased" entry in
-   `CHANGELOG.md`, the "Current stage" line in `CLAUDE.md`, and this file.
+   `CHANGELOG.md`, the "Current stage" line in `CLAUDE.md`, the "Status"
+   section of `README.md`, and this file.
 7. Definition of done, all of it, before the commit (commands in §4):
    gcc with `-Werror`, clang with `-Werror`, gcc with ASan/UBSan and leak
    detection, `make test`, `make examples`, and on POSIX the pty REPL test
    (`tests/cli.sh` runs it).
-8. Review round: independent reviewers with distinct lenses (C code and
-   memory, tests and edge cases, grammar/parser agreement, spec drift). Fix
-   the real findings in a follow-up commit "Phase N review: …". A finding
-   that questions a `SPEC.md` decision goes to Karim, not into the code.
+8. Review round: three or four subagents (the Agent tool, or the Workflow
+   tool when it is enabled), each with one lens and no chat history: C code
+   and memory (reads the diff, runs the ASan build); tests and edge cases
+   (invents inputs, runs the binary, compares with SPEC); grammar against the
+   parser (one EBNF rule = one function, first-token sets, left recursion);
+   spec and docs drift (SPEC rows, ROADMAP status, CHANGELOG, README). Each
+   returns numbered findings with severity, file:line, the input tried, and a
+   suggested fix. Verify every finding on the binary before acting. Fix the
+   real ones in a follow-up commit "Phase N review: …"; put the deferred ones
+   into "Open items" above. A finding that questions a `SPEC.md` decision goes
+   to Karim, not into the code.
 9. Commit, push `main`, check CI on all three jobs, local tag
-   `phase-NN-name`, then the Russian walkthrough.
+   `phase-NN-name`, then the Russian walkthrough. One commit "Phase N: …" per
+   phase was the norm; sub-phases (7a–7d) may be separate commits on `main`
+   if each leaves CI green. Pushing works with `git push -u origin main`
+   through the environment's git proxy (retry on network errors); `gh` is
+   read-only here, so CI status comes from the GitHub tools of the session or
+   `gh run list -R fryrrosx/arete`.
 
 ## 4. Commands
 
@@ -92,7 +125,8 @@ make clean && make build          # leave a normal build behind
 
 - Run the REPL and its tests with `HOME` set to a scratch directory: the REPL
   writes `$HOME/.arete_history`.
-- Debug output: `./arete run file.rt --dump-tokens` and `--dump-ast`.
+- Debug output: `./arete run --dump-tokens file.rt` and
+  `./arete run --dump-ast file.rt` (the flag goes before the file).
   `tests/run.sh` understands `.expected`, `.expected_error`, `.expected_ast`
   and `.expected_tokens`.
 - `sh tests/promote.sh examples/pending/NN_name.rt` moves an example whose
@@ -100,7 +134,8 @@ make clean && make build          # leave a normal build behind
   `# expected output:` block. Run the example first and read the output.
 - Commit messages: title "Phase N: …" or "Phase N review: …", a body that
   says what changed and why, then the attribution trailers the harness asks
-  for. No model names anywhere in the repository.
+  for. Apart from those trailers, no model names in the repository: not in
+  files, code comments, PR titles or bodies.
 - CI on Windows compiles `src\*.c` with MSVC (`/W4`, no `/WX`) and runs the
   shell tests under Git Bash. A POSIX-only source file must be guarded the way
   `src/linenoise.c` is, so that MSVC sees a non-empty, compilable unit.
@@ -163,11 +198,30 @@ limited (SPEC §3) so deep input is an error, not a crash.
 
 ## 7. Notes for phase 7
 
-- Put the "Решаем вместе" items of 7a–7c to Karim first: range syntax
-  (`0..10`, `0..<10`, `range(10)`), visibility of functions declared below
-  their use (two-pass collection as in Go/Kotlin, or strictly top-down),
-  lambda syntax and whether block lambdas exist given the rule "no INDENT
-  inside brackets", capture by reference or by value.
+- Put the "Решаем вместе" items to Karim first, in one or two batches. The
+  full list is the union of ROADMAP 7a–7c, SPEC §6 "Phase 7" and the OPEN(7)
+  rows of SPEC §2.5/§5: range syntax (SPEC provisionally has `a..b` exclusive
+  and `a..=b` inclusive; `0..<10` and `range(10)` are the alternatives);
+  visibility of functions declared below their use (two-pass collection as in
+  Go/Kotlin, or strictly top-down); lambda spelling (examples use
+  `fn(x) => x * 2`), whether a lambda may carry `-> Type`, and whether block
+  lambdas exist given the rule "no INDENT inside brackets"; capture by
+  reference (what `examples/pending/07_closures.rt` assumes) or by value;
+  `not in` as one operator. The iteration protocol of 7a (`iter/next` vs
+  index + length) is a design choice: propose it in the plan with reasons,
+  Karim decides only if he wants to.
+- Known constraints for the plan: the `for` target in phase 7 is a name or
+  `_` (destructuring is phase 9 in SPEC §6); unannotated lambda parameters
+  and the checking of defaults and named arguments are run-time matters until
+  the type checker of phase 10, so state that as a `P7-default`; the REPL's
+  rule that names may be redeclared must survive the resolver of 7d; the new
+  error texts (`break` outside a loop, `return` outside a function, wrong
+  number of arguments, unknown named argument, duplicate parameter, the
+  closure error of Crafting Interpreters ch. 11) are proposed in the plan and
+  go into the SPEC §4 table with the `.expected_error` files.
+- Karim's exercise for phase 7 is not chosen yet; propose one in the
+  walkthrough in the style of Crafting Interpreters' challenges (for example
+  `break` out of nested loops, or a `loop:` statement that runs until `break`).
 - `check.c` and `env.c` are the same shape on purpose; the resolver of 7d
   replaces the checker's scope with slot indices and makes `Env` slot-based.
 - Candidates for promotion at the end: `examples/pending/05_loops.rt`,

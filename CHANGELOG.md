@@ -4,6 +4,21 @@ One line per phase. Phase numbers refer to `ROADMAP.md`.
 
 ## Unreleased
 
+- Phases 7 and 8 review: a function without `-> T` called through a
+  variable can no longer leak a value; a lambda may call a function that
+  returns nothing; reading a name whose `let` has not run is the error
+  `has no value yet` (slots start unset); a failed REPL redefinition leaves
+  the old function in place; ranges compare by their elements; `_` may
+  repeat as a parameter name; the stack guard also covers deep expressions;
+  an argument that fails to evaluate no longer releases an uninitialised
+  value; clearer messages for `let print`, `print(x = 1)`, trailing commas,
+  `fn class()`, a lambda without a body, a default without a value. REPL: a
+  blank line after a `:` line runs the input, an error inside a block is
+  reported once, stdin as a terminal with stdout redirected reads plain
+  lines, NUL bytes are reported, Ctrl-D inside an input drops it, the
+  history holds 1000 lines and is saved after every line; the pty test
+  uses a temporary HOME.
+
 - Phase 7: `while`, `for x in a..b` / `a..=b` with `break` and `continue`
   (a fresh loop variable per iteration), ranges as values; `fn` with typed
   parameters, default values evaluated per call, named arguments, `return`,

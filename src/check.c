@@ -44,10 +44,22 @@ typedef struct FnCtx {
     struct FnCtx *outer;
 } FnCtx;
 
+/* A global declaration overwritten while checking one REPL input, kept so
+ * that a failed input can be undone (the run-time scope never saw it). */
+typedef struct {
+    size_t index;
+    Decl old;               /* the name pointer is shared, not owned */
+} Undo;
+
 struct Checker {
     bool repl_mode;
     Scope *scope;           /* innermost; the global scope is the last parent */
     FnCtx *fn;
+    const StmtList *top;    /* the statement list of the program being checked */
+    Undo *undo;             /* only while checking a REPL input */
+    size_t undo_count;
+    size_t undo_capacity;
+    size_t global_count_before;
 };
 
 /* ---- scopes ----------------------------------------------------------- */
@@ -85,9 +97,18 @@ static Decl *resolve(Checker *c, const char *name, int *hops) {
     return NULL;
 }
 
-static Decl *scope_declare(Scope *s, const char *name, DeclKind kind, bool is_mutable, int line) {
+static Decl *scope_declare(Checker *c, Scope *s, const char *name, DeclKind kind, bool is_mutable, int line) {
     Decl *existing = scope_find_here(s, name);
     if (existing != NULL) {                 /* only the REPL's global scope gets here */
+        if (c != NULL && c->undo != NULL) {
+            if (c->undo_count == c->undo_capacity) {
+                c->undo_capacity = c->undo_capacity == 0 ? 4 : c->undo_capacity * 2;
+                c->undo = xrealloc(c->undo, c->undo_capacity * sizeof(Undo));
+            }
+            c->undo[c->undo_count].index = (size_t)(existing - s->items);
+            c->undo[c->undo_count].old = *existing;
+            c->undo_count++;
+        }
         existing->kind = kind;
         existing->is_mutable = is_mutable;
         existing->line = line;
@@ -127,7 +148,7 @@ Checker *checker_new(bool repl_mode) {
     c->repl_mode = repl_mode;
     c->scope = scope_new(NULL);
     c->scope->is_global = true;
-    Decl *print = scope_declare(c->scope, "print", DECL_BUILTIN, false, 0);
+    Decl *print = scope_declare(NULL, c->scope, "print", DECL_BUILTIN, false, 0);
     print->returns_value = false;
     return c;
 }
@@ -139,6 +160,7 @@ void checker_free(Checker *c) {
         scope_free(c->scope);
         c->scope = parent;
     }
+    free(c->undo);
     free(c);
 }
 
@@ -147,11 +169,42 @@ void checker_free(Checker *c) {
 static bool already_declared(const Decl *first, const char *name, int line, int column, Diag *err) {
     char summary[160], label[80];
     snprintf(summary, sizeof summary, "`%s` is already declared", name);
+    if (first->kind == DECL_BUILTIN) {
+        diag_set(err, line, column, summary, "it is a built-in function", "choose another name");
+        return false;
+    }
     snprintf(label, sizeof label, "second declaration; the first is on line %d", first->line);
     const char *help = "use a new name, or declare it with `var` and assign to it";
     if (first->kind == DECL_FN) help = "a function and a variable cannot share a name in one scope";
     else if (first->is_mutable) help = "assign to it instead: `name = value`";
     diag_set(err, line, column, summary, label, help);
+    return false;
+}
+
+/* `let`/`var` are not hoisted: a function body that reads a global declared
+ * further down gets told so, instead of a bare "unknown name". */
+static bool unknown_name(Checker *c, const char *name, int line, int column, bool as_call, Diag *err) {
+    char summary[160], label[120], help[200];
+    snprintf(summary, sizeof summary, as_call ? "unknown function `%s`" : "unknown name `%s`", name);
+    const Stmt *later = NULL;
+    if (c->fn->proto != NULL && c->top != NULL) {
+        for (size_t i = 0; i < c->top->count; i++) {
+            const Stmt *s = c->top->items[i];
+            if (s->kind == STMT_LET && s->line > line && strcmp(s->as.let.name, name) == 0) { later = s; break; }
+        }
+    }
+    if (later != NULL) {
+        snprintf(label, sizeof label, "declared only on line %d, below this function", later->line);
+        snprintf(help, sizeof help, "move `%s %s` above the function; only functions are visible before their declaration",
+                 later->as.let.is_mutable ? "var" : "let", name);
+        diag_set(err, line, column, summary, label, help);
+    } else if (as_call) {
+        snprintf(help, sizeof help, "declare it first: `fn %s(...):`", name);
+        diag_set(err, line, column, summary, "no function has this name", help);
+    } else {
+        diag_set(err, line, column, summary, "nothing has this name",
+                 "declare it first: `let name = ...`; to call a function write `name(...)`");
+    }
     return false;
 }
 
@@ -241,13 +294,7 @@ static bool check_call(Checker *c, Expr *e, bool used_as_value, Diag *err) {
     if (callee->kind == EXPR_NAME) {
         int hops;
         known = resolve(c, callee->as.name.name, &hops);
-        if (known == NULL) {
-            char summary[160], help[200];
-            snprintf(summary, sizeof summary, "unknown function `%s`", callee->as.name.name);
-            snprintf(help, sizeof help, "declare it first: `fn %s(...):`", callee->as.name.name);
-            diag_set(err, callee->line, callee->column, summary, "no function has this name", help);
-            return false;
-        }
+        if (known == NULL) return unknown_name(c, callee->as.name.name, callee->line, callee->column, true, err);
         callee->as.name.hops = hops;
         callee->as.name.slot = known->slot;
     } else if (!check_expr(c, callee, true, err)) {
@@ -256,7 +303,14 @@ static bool check_call(Checker *c, Expr *e, bool used_as_value, Diag *err) {
 
     if (known != NULL && known->kind == DECL_BUILTIN) {           /* print */
         if (used_as_value) return returns_nothing_error(e, known->name, err);
-        if (e->as.call.arg_count != 1 || e->as.call.names[0] != NULL) {
+        if (e->as.call.arg_count >= 1 && e->as.call.names[0] != NULL) {
+            char summary[160];
+            snprintf(summary, sizeof summary, "`print` has no parameter `%s`", e->as.call.names[0]);
+            diag_set(err, e->as.call.args[0]->line, e->as.call.args[0]->column, summary,
+                     "named argument here", "write print(x)");
+            return false;
+        }
+        if (e->as.call.arg_count != 1) {
             char label[80];
             snprintf(label, sizeof label, "called with %zu argument%s",
                      e->as.call.arg_count, e->as.call.arg_count == 1 ? "" : "s");
@@ -289,13 +343,7 @@ static bool check_expr(Checker *c, Expr *e, bool used_as_value, Diag *err) {
         }
         int hops;
         Decl *d = resolve(c, e->as.name.name, &hops);
-        if (d == NULL) {
-            char summary[160];
-            snprintf(summary, sizeof summary, "unknown name `%s`", e->as.name.name);
-            diag_set(err, e->line, e->column, summary, "nothing has this name",
-                     "declare it first: `let name = ...`; to call a function write `name(...)`");
-            return false;
-        }
+        if (d == NULL) return unknown_name(c, e->as.name.name, e->line, e->column, false, err);
         e->as.name.hops = hops;
         e->as.name.slot = d->slot;
         return true;
@@ -347,10 +395,15 @@ static bool check_function(Checker *c, FnProto *f, Diag *err) {
     for (size_t i = 0; ok && i < f->param_count; i++) {
         Param *p = &f->params[i];
         if (p->default_value != NULL) ok = check_expr(c, p->default_value, true, err);
-        if (ok) scope_declare(c->scope, p->name, DECL_PARAM, false, p->line);
+        if (!ok) break;
+        if (strcmp(p->name, "_") == 0) c->scope->slot_count++;      /* a slot, but no name */
+        else scope_declare(c, c->scope, p->name, DECL_PARAM, false, p->line);
     }
     if (ok && f->body != NULL) ok = declare_functions(c, f->body, err) && check_list(c, f->body, err);
-    if (ok && f->expr_body != NULL) ok = check_expr(c, f->expr_body, true, err);
+    /* A lambda without `-> T` whose body is a call passes on whatever that
+     * call returns, possibly nothing: `fn(x) => print(x)` is allowed. */
+    bool forwards_call = (f->result == NULL && f->expr_body != NULL && f->expr_body->kind == EXPR_CALL);
+    if (ok && f->expr_body != NULL) ok = check_expr(c, f->expr_body, !forwards_call, err);
     f->slot_count = pop_scope(c);
     if (f->body != NULL) f->body->slot_count = f->slot_count;
     c->fn = ctx.outer;
@@ -369,7 +422,7 @@ static bool declare_functions(Checker *c, StmtList *list, Diag *err) {
         if (here != NULL && !(c->repl_mode && c->scope->is_global)) {
             return already_declared(here, f->name, s->line, s->column, err);
         }
-        Decl *d = scope_declare(c->scope, f->name, DECL_FN, false, s->line);
+        Decl *d = scope_declare(c, c->scope, f->name, DECL_FN, false, s->line);
         d->proto = f;
         d->returns_value = (f->result != NULL);
         s->as.fn.slot = d->slot;
@@ -397,7 +450,7 @@ static bool check_stmt(Checker *c, Stmt *s, Diag *err) {
         if (here != NULL && !(c->repl_mode && c->scope->is_global)) {
             return already_declared(here, s->as.let.name, s->line, s->column, err);
         }
-        Decl *d = scope_declare(c->scope, s->as.let.name, DECL_VAR, s->as.let.is_mutable, s->line);
+        Decl *d = scope_declare(c, c->scope, s->as.let.name, DECL_VAR, s->as.let.is_mutable, s->line);
         s->as.let.slot = d->slot;
         return true;
     }
@@ -460,7 +513,7 @@ static bool check_stmt(Checker *c, Stmt *s, Diag *err) {
         if (strcmp(s->as.for_.name, "_") == 0) {
             c->scope->slot_count++;                    /* reserve slot 0, declare nothing */
         } else {
-            scope_declare(c->scope, s->as.for_.name, DECL_VAR, false, s->as.for_.name_line);
+            scope_declare(c, c->scope, s->as.for_.name, DECL_VAR, false, s->as.for_.name_line);
         }
         c->fn->loop_depth++;
         bool ok = declare_functions(c, s->as.for_.body, err) && check_list(c, s->as.for_.body, err);
@@ -536,7 +589,24 @@ bool check_program(Checker *c, Program *prog, Diag *err) {
     top.loop_depth = 0;
     top.outer = NULL;
     c->fn = &top;
+    c->top = &prog->body;
+    Scope *global = c->scope;
+    if (c->repl_mode) {
+        /* A failed input must leave the session as it was: remember what
+         * this input adds to or changes in the global scope. */
+        c->undo_count = 0;
+        if (c->undo == NULL) c->undo = xmalloc(4 * sizeof(Undo)), c->undo_capacity = 4;
+        c->global_count_before = global->count;
+    }
     bool ok = declare_functions(c, &prog->body, err) && check_list(c, &prog->body, err);
+    if (c->repl_mode && !ok) {
+        for (size_t i = c->undo_count; i > 0; i--) {
+            global->items[c->undo[i - 1].index] = c->undo[i - 1].old;
+        }
+        for (size_t i = c->global_count_before; i < global->count; i++) free(global->items[i].name);
+        global->count = c->global_count_before;
+    }
     c->fn = NULL;
+    c->top = NULL;
     return ok;
 }

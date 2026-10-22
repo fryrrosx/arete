@@ -14,6 +14,7 @@
 #define ARETE_FILENO(f) _fileno(f)
 #else
 #include <errno.h>
+#include <fcntl.h>
 #include <sys/resource.h>
 #include <unistd.h>
 #include "linenoise.h"
@@ -75,7 +76,7 @@ char *rt_read_file(const char *path, size_t *length_out) {
     return buffer;
 }
 
-char *rt_read_line(FILE *in) {
+char *rt_read_line(FILE *in, size_t *length_out) {
     size_t capacity = 128;
     size_t length = 0;
     char *buffer = malloc(capacity);
@@ -103,6 +104,7 @@ char *rt_read_line(FILE *in) {
     }
     if (length > 0 && buffer[length - 1] == '\r') length--;
     buffer[length] = '\0';
+    if (length_out != NULL) *length_out = length;     /* the line may hold NUL bytes */
     return buffer;
 }
 
@@ -113,7 +115,9 @@ char *rt_read_line_prompt(const char *prompt, bool *cancelled) {
     *cancelled = false;
     fputs(prompt, stdout);
     fflush(stdout);
-    return rt_read_line(stdin);
+    char *line = rt_read_line(stdin, NULL);
+    if (line == NULL) fputc('\n', stdout);      /* Ctrl-Z: leave the prompt's line */
+    return line;
 }
 
 void rt_history_load(void) {}
@@ -134,22 +138,32 @@ static char *history_path(void) {
 }
 
 char *rt_read_line_prompt(const char *prompt, bool *cancelled) {
+    static bool stdin_checked = false;
+    if (!stdin_checked) {
+        /* A program that shared this terminal may have left stdin
+         * non-blocking; linenoise would then spin instead of waiting. */
+        int flags = fcntl(STDIN_FILENO, F_GETFL);
+        if (flags != -1 && (flags & O_NONBLOCK)) fcntl(STDIN_FILENO, F_SETFL, flags & ~O_NONBLOCK);
+        stdin_checked = true;
+    }
     *cancelled = false;
     errno = 0;
-    char *line = linenoise(prompt);
+    char *line = linenoise(prompt);             /* prints the line end at EOF itself */
     if (line == NULL && errno == EAGAIN) *cancelled = true;   /* Ctrl-C */
     return line;                                              /* malloc'd, free() it */
 }
 
 void rt_history_load(void) {
-    linenoiseHistorySetMaxLen(HISTORY_LINES);
+    /* linenoise keeps one slot for the line being edited; without the +1
+     * the file would hold 999 lines. */
+    linenoiseHistorySetMaxLen(HISTORY_LINES + 1);
     char *path = history_path();
     if (path != NULL) linenoiseHistoryLoad(path);
     free(path);
 }
 
 void rt_history_add(const char *line) {
-    linenoiseHistoryAdd(line);
+    if (linenoiseHistoryAdd(line)) rt_history_save();
 }
 
 void rt_history_save(void) {
@@ -162,6 +176,10 @@ void rt_history_save(void) {
 
 bool rt_stdin_is_terminal(void) {
     return ARETE_ISATTY(ARETE_FILENO(stdin)) != 0;
+}
+
+bool rt_stdout_is_terminal(void) {
+    return ARETE_ISATTY(ARETE_FILENO(stdout)) != 0;
 }
 
 #define DEFAULT_STACK (8u * 1024u * 1024u)

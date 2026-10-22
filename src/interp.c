@@ -100,9 +100,16 @@ static bool stack_ok(Interp *in, const Expr *at) {
 /* Message helpers kept out of the hot functions, so that their buffers do
  * not sit in every frame of the recursive walk. */
 static bool fail_no_value(Interp *in, const Expr *e) {
+    char summary[160], help[160];
+    snprintf(summary, sizeof summary, "`%s` has no value yet", e->as.name.name);
+    snprintf(help, sizeof help, "declare `%s` before the code that reads it", e->as.name.name);
+    return fail(in, e, summary, "its declaration has not run yet, or failed", help);
+}
+
+static bool fail_returns_nothing(Interp *in, const Expr *call, const char *name) {
     char summary[160];
-    snprintf(summary, sizeof summary, "`%s` has no value", e->as.name.name);
-    return fail(in, e, summary, "its declaration failed earlier", NULL);
+    snprintf(summary, sizeof summary, "`%s` returns nothing and cannot be used as a value", name);
+    return fail(in, call, summary, "used as a value here", "call it on its own line");
 }
 
 static bool fail_not_callable(Interp *in, const Expr *e, Value callee) {
@@ -309,8 +316,15 @@ static bool values_equal(Value a, Value b) {
             return x->length == y->length && memcmp(x->chars, y->chars, x->length) == 0;
         }
         case OBJ_RANGE: {
+            /* Equal when they hold the same ints: all empty ranges are
+             * equal, 0..3 == 0..=2. */
             ObjRange *x = (ObjRange *)a.as.obj, *y = (ObjRange *)b.as.obj;
-            return x->start == y->start && x->end == y->end && x->inclusive == y->inclusive;
+            bool x_empty = x->inclusive ? x->start > x->end : x->start >= x->end;
+            bool y_empty = y->inclusive ? y->start > y->end : y->start >= y->end;
+            if (x_empty || y_empty) return x_empty && y_empty;
+            int64_t x_last = x->inclusive ? x->end : x->end - 1;
+            int64_t y_last = y->inclusive ? y->end : y->end - 1;
+            return x->start == y->start && x_last == y_last;
         }
         default:
             return a.as.obj == b.as.obj;         /* functions: the same function */
@@ -357,6 +371,7 @@ static bool compare(Interp *in, const Expr *at, TokenKind op, Value a, Value b, 
 /* ---- evaluation ------------------------------------------------------- */
 
 static bool eval(Interp *in, const Expr *e, Value *out);
+static bool eval_call(Interp *in, const Expr *e, Value *out, bool want_value);
 static Flow exec_list(Interp *in, const StmtList *list, ObjEnv *env);
 
 static bool need_bool(Interp *in, const Expr *at, Value v, const char *what) {
@@ -503,7 +518,7 @@ static bool bind_arguments(Interp *in, const Expr *call, const FnProto *f, Value
                 if (f->param_count == 0) snprintf(help, sizeof help, "it takes no arguments");
                 return fail(in, arg, summary, "named argument here", help);
             }
-            if (env->slots[index].kind != VAL_NULL) {
+            if (env->slots[index].kind != VAL_UNSET) {
                 char summary[160];
                 snprintf(summary, sizeof summary, "argument `%s` is given twice", arg_name);
                 return fail(in, arg, summary, "second time here", "it was already passed by position");
@@ -513,7 +528,7 @@ static bool bind_arguments(Interp *in, const Expr *call, const FnProto *f, Value
         env->slots[index] = args[i];
     }
     for (size_t k = 0; k < f->param_count; k++) {
-        if (env->slots[k].kind == VAL_NULL && f->params[k].default_value == NULL) {
+        if (env->slots[k].kind == VAL_UNSET && f->params[k].default_value == NULL) {
             char summary[160], help[160];
             snprintf(summary, sizeof summary, "missing argument `%s` in call to `%s`",
                      f->params[k].name, name);
@@ -524,13 +539,16 @@ static bool bind_arguments(Interp *in, const Expr *call, const FnProto *f, Value
     return true;
 }
 
-/* A `null` in a parameter slot after binding means "take the default":
- * values are never null in phase 7. */
-static bool call_function(Interp *in, const Expr *call, ObjFunction *f, Value *args, size_t count, Value *out) {
+/* Runs `f`. A slot still VAL_UNSET after binding takes its default. When
+ * the function returns nothing, `out` is left VAL_UNSET if the caller does
+ * not want a value, otherwise that is the error "cannot be used as a value"
+ * (the checker reports it before running when it can see the callee). */
+static bool call_function(Interp *in, const Expr *call, ObjFunction *f, Value *args, size_t count, Value *out,
+                          bool want_value) {
+    *out = (Value){ .kind = VAL_UNSET };
     if (f->native == NATIVE_PRINT) {
-        if (!call_print(in, call, args, count)) return false;
-        *out = value_null();
-        return true;
+        if (want_value) return fail_returns_nothing(in, call, f->name);
+        return call_print(in, call, args, count);
     }
     if (in->depth >= MAX_CALL_DEPTH) return fail_too_deep(in, call);
     const FnProto *proto = f->proto;
@@ -547,10 +565,20 @@ static bool call_function(Interp *in, const Expr *call, ObjFunction *f, Value *a
     in->depth++;
     bool ok = true;
     for (size_t k = 0; ok && k < proto->param_count; k++) {
-        if (env->slots[k].kind == VAL_NULL) ok = eval(in, proto->params[k].default_value, &env->slots[k]);
+        if (env->slots[k].kind == VAL_UNSET) ok = eval(in, proto->params[k].default_value, &env->slots[k]);
     }
     if (ok && proto->expr_body != NULL) {
-        ok = eval(in, proto->expr_body, out);
+        /* A lambda whose body is a call passes on what the call returns,
+         * possibly nothing; any other body is a value. */
+        if (proto->result == NULL && proto->expr_body->kind == EXPR_CALL) {
+            ok = eval_call(in, proto->expr_body, out, false);
+            if (ok && want_value && out->kind == VAL_UNSET) {
+                in->source = caller_source;
+                ok = fail_returns_nothing(in, call, f->name);
+            }
+        } else {
+            ok = eval(in, proto->expr_body, out);
+        }
     } else if (ok) {
         Flow flow = exec_list(in, proto->body, env);
         if (flow == FLOW_ERROR) {
@@ -561,8 +589,9 @@ static bool call_function(Interp *in, const Expr *call, ObjFunction *f, Value *a
         } else if (proto->result != NULL) {
             in->source = caller_source;
             ok = fail_no_return(in, call, proto);
-        } else {
-            *out = value_null();
+        } else if (want_value) {
+            in->source = caller_source;
+            ok = fail_returns_nothing(in, call, proto->name);
         }
     }
     in->depth--;
@@ -572,8 +601,7 @@ static bool call_function(Interp *in, const Expr *call, ObjFunction *f, Value *a
     return ok;
 }
 
-static bool eval_call(Interp *in, const Expr *e, Value *out) {
-    if (!stack_ok(in, e)) return false;
+static bool eval_call(Interp *in, const Expr *e, Value *out, bool want_value) {
     Value callee;
     if (!eval(in, e->as.call.callee, &callee)) return false;
     if (!value_is(callee, OBJ_FUNCTION)) {
@@ -583,10 +611,10 @@ static bool eval_call(Interp *in, const Expr *e, Value *out) {
     }
     size_t count = e->as.call.arg_count;
     Value *args = count > 0 ? xmalloc(count * sizeof(Value)) : NULL;
-    size_t done = 0;
-    bool ok = true;
-    for (; ok && done < count; done++) ok = eval(in, e->as.call.args[done], &args[done]);
-    if (ok) ok = call_function(in, e, (ObjFunction *)callee.as.obj, args, count, out);
+    size_t done = 0;                          /* arguments evaluated, each holding a reference */
+    while (done < count && eval(in, e->as.call.args[done], &args[done])) done++;
+    bool ok = (done == count);
+    if (ok) ok = call_function(in, e, (ObjFunction *)callee.as.obj, args, count, out, want_value);
     for (size_t i = 0; i < done; i++) value_release(args[i]);
     free(args);
     value_release(callee);
@@ -595,6 +623,7 @@ static bool eval_call(Interp *in, const Expr *e, Value *out) {
 
 /* Evaluates an expression into a value the caller owns (must release). */
 static bool eval(Interp *in, const Expr *e, Value *out) {
+    if (!stack_ok(in, e)) return false;
     switch (e->kind) {
     case EXPR_INT:    *out = value_int(e->as.integer); return true;
     case EXPR_FLOAT:  *out = value_float(e->as.number); return true;
@@ -608,12 +637,13 @@ static bool eval(Interp *in, const Expr *e, Value *out) {
             slot = &b->value;
         } else {
             slot = env_slot(in->env, e->as.name.hops, e->as.name.slot);
+            if (slot->kind == VAL_UNSET) return fail_no_value(in, e);   /* its `let` has not run */
         }
         value_retain(*slot);
         *out = *slot;
         return true;
     }
-    case EXPR_CALL:    return eval_call(in, e, out);
+    case EXPR_CALL:    return eval_call(in, e, out, true);
     case EXPR_UNARY:   return eval_unary(in, e, out);
     case EXPR_BINARY:  return eval_binary(in, e, out);
     case EXPR_LOGICAL: return eval_logical(in, e, out);
@@ -716,7 +746,9 @@ static Flow exec_stmt(Interp *in, const Stmt *s) {
     switch (s->kind) {
     case STMT_EXPR: {
         Value v;
-        if (!eval(in, s->as.expr, &v)) return FLOW_ERROR;
+        bool ok = s->as.expr->kind == EXPR_CALL ? eval_call(in, s->as.expr, &v, false)   /* the value is dropped */
+                                                : eval(in, s->as.expr, &v);
+        if (!ok) return FLOW_ERROR;
         value_release(v);
         return FLOW_NORMAL;
     }
@@ -746,6 +778,14 @@ static Flow exec_stmt(Interp *in, const Stmt *s) {
             target = &b->value;
         } else {
             target = env_slot(in->env, s->as.assign.hops, s->as.assign.slot);
+        }
+        if (target->kind == VAL_UNSET && s->as.assign.op != TOK_EQUAL) {
+            value_release(v);
+            char summary[160];
+            snprintf(summary, sizeof summary, "`%s` has no value yet", s->as.assign.name);
+            fail_at(in, s->line, s->column, summary, "its declaration has not run yet",
+                    "declare it before the code that changes it");
+            return FLOW_ERROR;
         }
         if (s->as.assign.op != TOK_EQUAL) {
             Value result;

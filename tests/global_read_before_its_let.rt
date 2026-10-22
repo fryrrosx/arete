@@ -1,0 +1,5 @@
+arete 0.1
+helper()
+let x = 5
+fn helper():
+    print(x)

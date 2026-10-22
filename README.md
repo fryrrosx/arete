@@ -44,4 +44,6 @@ Implementation language: C11, no dependencies beyond the C standard library
 
 ## License
 
-MIT. See `LICENSE`.
+MIT. See `LICENSE`. The REPL line editor `src/linenoise.c` and `src/linenoise.h`
+is vendored from antirez/linenoise under the BSD-2 license; see
+`LICENSE-linenoise`.

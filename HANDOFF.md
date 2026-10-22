@@ -31,11 +31,13 @@ Update it at the end of every phase.
 
 ### Open items (do these before or at the start of the next phase)
 
-- The phase 8 review round never finished (the session hit its usage limit).
-  Still owed: an independent read of `read_input` in `src/main.c`,
-  `lexer_input_incomplete` in `src/lexer.c`, and the history code in
-  `src/rt_sys.c`, with the inputs from §3 step 8 tried on the binary.
-- Karim's `%` exercise (see above).
+- Karim's `%` exercise (see above) and the phase 7 exercise `repeat n:`
+  proposed in the phase 7 walkthrough.
+- The phase 7 and 8 review rounds ran with three or four finders each; the
+  verify stage was cut by a usage limit, so the findings were judged by
+  hand and fixed in the commit "Phase 7 and 8 review". Lenses worth
+  repeating in later phases: a reviewer that drives the REPL through a
+  pseudo-terminal found most of the phase 8 defects.
 
 ## 2. Who Karim is and how he works
 
@@ -195,6 +197,16 @@ limited (SPEC §3) so deep input is an error, not a crash.
   a buggy binary. Read the output before promoting it to `.expected`.
 - If you use the Workflow tool, keep backticks out of prompts written inside
   template literals; one script failed to parse that way.
+- A sentinel that is also a value is a bug waiting to happen: `null` was
+  used to mean "argument not given" and leaked out of void functions. Slots
+  now start as `VAL_UNSET`, which no program can observe.
+- A test that touches dotfiles in `$HOME` touches the developer's real
+  files when `make test` runs on their machine. The pty test makes its own
+  temporary HOME; keep it that way for anything that reads or writes
+  outside the repository.
+- The phase 8 review workflow's verify agents all failed on a usage limit:
+  when a workflow result says "refuted" with reason "no verdict", nothing
+  was refuted. Read the journal.
 - Never change a `SPEC.md` decision silently; never implement `%`; never edit
   the vendored linenoise body.
 

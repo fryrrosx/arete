@@ -1,0 +1,11 @@
+arete 0.1
+let show = fn(x: int) => print(x)
+show(1)
+fn say():
+    print("said")
+let call = fn() => say()
+call()
+fn twice(f: fn()):
+    f()
+    f()
+twice(call)

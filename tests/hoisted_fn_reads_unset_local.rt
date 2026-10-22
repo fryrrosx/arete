@@ -1,0 +1,7 @@
+arete 0.1
+fn outer():
+    helper()
+    let x = 5
+    fn helper():
+        print(x)
+outer()

@@ -133,9 +133,8 @@ static int cmd_run(const char *path, Mode mode) {
     return code;
 }
 
-/* Appends `line` and a newline to the malloc'd buffer. */
-static char *buffer_append(char *buffer, size_t *length, const char *line) {
-    size_t n = strlen(line);
+/* Appends `n` bytes of `line` and a newline to the malloc'd buffer. */
+static char *buffer_append(char *buffer, size_t *length, const char *line, size_t n) {
     buffer = realloc(buffer, *length + n + 2);
     if (buffer == NULL) {
         fputs("fatal: out of memory\n", stderr);
@@ -148,6 +147,21 @@ static char *buffer_append(char *buffer, size_t *length, const char *line) {
     return buffer;
 }
 
+/* The REPL buffer ends with a line end after its text; a NUL byte typed
+ * into it must reach the lexer, so the length is not strlen. The buffer
+ * holds "\n"-terminated lines, and buffer_append keeps a NUL after the
+ * last one, so the length is found by scanning for that final "\n\0". */
+static size_t input_length(const char *buffer) {
+    size_t n = 0;
+    for (;;) {
+        size_t chunk = strlen(buffer + n);
+        n += chunk;
+        if (chunk > 0 && buffer[n - 1] == '\n') return n;
+        if (buffer[n] == '\0' && (n == 0 || buffer[n - 1] == '\n')) return n;
+        n++;                                     /* a NUL inside the text: step over it */
+    }
+}
+
 static bool line_is_blank(const char *line) {
     for (; *line != '\0'; line++) {
         if (*line != ' ' && *line != '\t' && *line != '\r') return false;
@@ -157,16 +171,24 @@ static bool line_is_blank(const char *line) {
 
 /* Reads one complete input: a single statement, or a block and the lines
  * that follow it until a blank line, as in Python. The continuation prompt
- * `... ` shows while more lines are needed. Returns NULL at end of input
- * when nothing was read. */
+ * `... ` shows while more lines are needed. A blank line always ends the
+ * input unless a bracket is open, so `if true:` followed by an empty line
+ * runs (and reports the missing body) instead of waiting forever. Once a
+ * block has opened, its lines are collected without looking at them: a
+ * stray error inside is reported once, when the whole block runs. Returns
+ * NULL at end of input when nothing was read, or when Ctrl-D cut an input
+ * short (that input is dropped, as with Ctrl-C). */
 static char *read_input(bool interactive) {
     char *buffer = NULL;
     size_t length = 0;
-    bool in_block = false;
+    bool in_block = false;                       /* a `:` line and its line end were seen */
     for (;;) {
         const char *prompt = buffer == NULL ? ">>> " : "... ";
         bool cancelled = false;
-        char *line = interactive ? rt_read_line_prompt(prompt, &cancelled) : rt_read_line(stdin);
+        size_t line_length = 0;
+        char *line = interactive ? rt_read_line_prompt(prompt, &cancelled)
+                                 : rt_read_line(stdin, &line_length);
+        if (line != NULL && interactive) line_length = strlen(line);
         if (line == NULL && cancelled) {         /* Ctrl-C: drop this input, start over */
             free(buffer);
             buffer = NULL;
@@ -175,21 +197,28 @@ static char *read_input(bool interactive) {
             continue;
         }
         if (line == NULL) {
-            if (interactive) fputc('\n', stdout);
+            if (interactive && buffer != NULL) { /* Ctrl-D inside an input: drop it and leave */
+                free(buffer);
+                return NULL;
+            }
             return buffer;                       /* NULL when nothing was typed */
         }
-        if (interactive && !line_is_blank(line)) rt_history_add(line);
         bool blank = line_is_blank(line);
-        buffer = buffer_append(buffer, &length, line);
+        if (interactive && !blank) rt_history_add(line);
+        buffer = buffer_append(buffer, &length, line, line_length);
         free(line);
+        if (in_block && !blank) continue;        /* collecting the block: no need to look */
 
         Source src;
         src.file = "<repl>";
         src.text = buffer;
         src.length = length;
-        bool incomplete = lexer_input_incomplete(&src, &in_block);
-        if (incomplete) continue;                /* `:` at the end, or an open bracket */
-        if (in_block && !blank) continue;        /* inside a block: wait for the blank line */
+        InputState state;
+        lexer_input_state(&src, &state);
+        if (state.opened_block) in_block = true;
+        if (state.open_bracket) continue;        /* `print((1 +` keeps reading, blank lines too */
+        if (blank) return buffer;                /* ends the block, or an opener without a body */
+        if (state.ends_with_colon || in_block) continue;
         return buffer;
     }
 }
@@ -197,7 +226,9 @@ static char *read_input(bool interactive) {
 /* The session continues after an error; the exit code remembers that one
  * happened, as SPEC section 2.1 requires. */
 static int cmd_repl(const char *version) {
-    bool interactive = rt_stdin_is_terminal();
+    /* The line editor needs both ends of the terminal; `arete 0.1 > log`
+     * reads plain lines without prompts, like a pipe. */
+    bool interactive = rt_stdin_is_terminal() && rt_stdout_is_terminal();
     int status = 0;
     Session s;
     session_init(&s, true);
@@ -208,7 +239,7 @@ static int cmd_repl(const char *version) {
     for (;;) {
         char *input = read_input(interactive);
         if (input == NULL) break;
-        Source *src = source_new("<repl>", input, strlen(input));
+        Source *src = source_new("<repl>", input, input_length(input));
         if (run_source(&s, src, true, MODE_RUN) != 0) status = 1;
     }
     if (interactive) rt_history_save();

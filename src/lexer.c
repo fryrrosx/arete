@@ -809,27 +809,27 @@ bool lexer_tokenize(const Source *src, bool expect_header,
     return true;
 }
 
-bool lexer_input_incomplete(const Source *src, bool *in_block) {
+void lexer_input_state(const Source *src, InputState *out) {
     TokenList tokens = {0};
     Diag err = {0};
     bool ok = lexer_tokenize(src, false, &tokens, &err);
-    bool incomplete = false;
-    *in_block = false;
+    out->open_bracket = false;
+    out->ends_with_colon = false;
+    out->opened_block = false;
     if (!ok) {
         /* Only an unclosed bracket means "keep typing"; any other error is
          * reported when the input runs. */
-        incomplete = strcmp(err.summary, "unclosed `(`") == 0;
+        out->open_bracket = strcmp(err.summary, "unclosed `(`") == 0;
     } else {
         TokenKind before_newline = TOK_EOF;
         TokenKind last = TOK_EOF;
         for (size_t i = 0; i < tokens.count; i++) {
             TokenKind k = tokens.items[i].kind;
-            if (k == TOK_NEWLINE && last == TOK_COLON) *in_block = true;
+            if (k == TOK_NEWLINE && last == TOK_COLON) out->opened_block = true;
             if (k == TOK_NEWLINE) before_newline = last;
             if (k != TOK_NEWLINE && k != TOK_INDENT && k != TOK_DEDENT && k != TOK_EOF) last = k;
         }
-        incomplete = (before_newline == TOK_COLON);
+        out->ends_with_colon = (before_newline == TOK_COLON);
     }
     token_list_free(&tokens);
-    return incomplete;
 }

@@ -90,6 +90,25 @@ case "$(uname -s 2>/dev/null)" in
        fi ;;
 esac
 
+# With a small stack a deep expression inside deep recursion is the error
+# `stack overflow`, never a crash (SPEC section 4).
+case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *) deep="$(mktemp)"
+       {
+           printf 'arete 0.1\nfn down(n: int) -> int:\n    if n == 0:\n        return 0\n    let x = '
+           i=0; while [ $i -lt 900 ]; do printf -- '-'; i=$((i + 1)); done
+           printf '1\n    return down(n - 1) + x\nprint(down(899))\n'
+       } > "$deep"
+       err="$( (ulimit -s 512 2>/dev/null; "$bin" run "$deep" 2>&1 >/dev/null); echo "code=$?" )"
+       rm -f "$deep"
+       case "$err" in
+           *"stack overflow"*"code=1") ;;
+           *"code=0") ;;                    # the shell could not lower the stack: fine
+           *) echo "FAIL stack-guard: $err"; fail=1 ;;
+       esac ;;
+esac
+
 # Functions declared in one REPL input are callable in the next, and may be
 # redefined; an error inside such a function shows the line of the input
 # that declared it.
@@ -112,6 +131,36 @@ case "$out" in
     *"unknown function \`make\`"*) ;;
     *) echo "FAIL repl-unknown-function: $out"; fail=1 ;;
 esac
+
+# A blank line ends the input even right after a `:` line (the parser then
+# reports the missing body) and the next statement still runs.
+out="$(printf 'if true:\n\nprint(1)\n' | "$bin" 0.1 2>/dev/null)"
+err="$(printf 'if true:\n\nprint(1)\n' | "$bin" 0.1 2>&1 >/dev/null)"
+case "$out:$err" in
+    "1:"*"expected an indented block after \`if\`"*) ;;
+    *) echo "FAIL repl-blank-after-colon: $out / $err"; fail=1 ;;
+esac
+# An error inside a block is reported once; the block's other lines are
+# not mistaken for separate inputs.
+err="$(printf 'if true:\n    print(1)\n    let s = "oops\n    print(2)\n\nprint(3)\n' | "$bin" 0.1 2>&1 >/dev/null)"
+out="$(printf 'if true:\n    print(1)\n    let s = "oops\n    print(2)\n\nprint(3)\n' | "$bin" 0.1 2>/dev/null)"
+case "$err" in
+    *"unexpected indentation"*) echo "FAIL repl-error-inside-block: $err"; fail=1 ;;
+    *"unterminated string literal"*) [ "$out" = "3" ] || { echo "FAIL repl-error-inside-block: $out"; fail=1; } ;;
+    *) echo "FAIL repl-error-inside-block: $err"; fail=1 ;;
+esac
+# A NUL byte in piped input is reported, not silently cut.
+err="$(printf 'print(1)\0print(2)\n' | "$bin" 0.1 2>&1 >/dev/null)"
+case "$err" in
+    *"unexpected character (byte 0x00)"*) ;;
+    *) echo "FAIL repl-nul-byte: $err"; fail=1 ;;
+esac
+# A redefinition that fails its check leaves the old function in place.
+out="$(printf 'fn f(a: int) -> int:\n    return a\n\nfn f(a: int, b: int) -> int:\n    return a + nope\n\nprint(f(1))\n' | "$bin" 0.1 2>/dev/null)"
+[ "$out" = "1" ] || { echo "FAIL repl-failed-redefinition-undone: $out"; fail=1; }
+# An open bracket keeps reading across a blank line.
+out="$(printf 'print((1 +\n\n2))\n' | "$bin" 0.1 2>&1)"
+[ "$out" = "3" ] || { echo "FAIL repl-open-bracket-blank-line: $out"; fail=1; }
 
 # Empty input and empty lines are fine.
 out="$(printf '' | "$bin" 0.1 2>&1)"

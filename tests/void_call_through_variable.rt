@@ -1,0 +1,8 @@
+arete 0.1
+fn say():
+    print("hi")
+fn f(x: int = 99) -> int:
+    return x
+let s = say
+s()
+print(f(s()))

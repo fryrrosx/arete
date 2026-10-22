@@ -1,0 +1,7 @@
+arete 0.1
+fn outer():
+    bump()
+    var x = 5
+    fn bump():
+        x += 1
+outer()

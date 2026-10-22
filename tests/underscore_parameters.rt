@@ -1,0 +1,8 @@
+arete 0.1
+let second = fn(_: int, b: int) => b
+print(second(1, 2))
+let two = fn(_: int, _: int) => 2
+print(two(5, 6))
+fn ignore(_: int, keep: string) -> string:
+    return keep
+print(ignore(0, "kept"))

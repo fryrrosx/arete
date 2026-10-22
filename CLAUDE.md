@@ -15,7 +15,8 @@ Full specification: `SPEC.md`. Grammar: `GRAMMAR.md`. Plan: `ROADMAP.md`.
   so far (decided by Karim in phase 8): `src/linenoise.c` and `src/linenoise.h`,
   vendored from antirez/linenoise (BSD-2, see LICENSE-linenoise), compiled only
   on POSIX, used only by the REPL. Vendored code is not edited beyond the
-  Windows guard at its top.
+  Windows guard at its top and bottom (the pristine body's sha256 is in the
+  file header).
 - Platform-specific calls live only inside the `rt_*` runtime layer.
 
 ## Key language rules

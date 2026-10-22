@@ -39,6 +39,7 @@ typedef struct {
 } ObjString;
 
 typedef enum {
+    VAL_UNSET,     /* a slot nothing was stored in yet; never a value a program sees */
     VAL_NULL,
     VAL_BOOL,
     VAL_INT,

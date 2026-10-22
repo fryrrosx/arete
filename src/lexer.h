@@ -14,11 +14,14 @@
 bool lexer_tokenize(const Source *src, bool expect_header,
                     TokenList *out, Diag *err);
 
-/* For the REPL: is this input incomplete, so that the next line still
- * belongs to it? True when a bracket is still open or the last logical
- * line ends with `:` (a block opener). `in_block` reports whether the
- * input has opened a block at all, so the REPL knows to wait for the
- * blank line that ends it. */
-bool lexer_input_incomplete(const Source *src, bool *in_block);
+/* For the REPL: what the lines typed so far look like, so that read_input
+ * in main.c can decide whether the next line still belongs to them. */
+typedef struct {
+    bool open_bracket;      /* a `(` is still open: keep reading, blank lines included */
+    bool ends_with_colon;   /* the last line ends with `:`: its body comes next */
+    bool opened_block;      /* some line ended with `:` and was followed by a line end */
+} InputState;
+
+void lexer_input_state(const Source *src, InputState *out);
 
 #endif

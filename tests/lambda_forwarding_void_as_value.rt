@@ -1,0 +1,5 @@
+arete 0.1
+fn say():
+    print("hi")
+let m = fn() => say()
+let v = m()

@@ -360,6 +360,11 @@ static Expr *parse_call(Parser *p, Expr *callee) {
             count++;
             if (peek_is(p, TOK_COMMA)) {
                 advance(p);
+                if (peek_is(p, TOK_RPAREN)) {
+                    error_at(p, peek(p), "expected an argument after `,`, found `)`", "here",
+                             "remove the trailing comma");
+                    goto fail;
+                }
                 continue;
             }
             break;
@@ -403,7 +408,7 @@ static bool parse_params(Parser *p, FnProto *f, bool is_lambda) {
         }
         advance(p);
         for (size_t i = 0; i < f->param_count; i++) {
-            if (strcmp(f->params[i].name, name->text) == 0) {
+            if (strcmp(name->text, "_") != 0 && strcmp(f->params[i].name, name->text) == 0) {
                 char summary[160];
                 snprintf(summary, sizeof summary, "parameter `%s` is declared twice", name->text);
                 error_at(p, name, summary, "second time here", NULL);
@@ -434,11 +439,24 @@ static bool parse_params(Parser *p, FnProto *f, bool is_lambda) {
                          "declare a named function with `fn name(...)` instead");
                 return false;
             }
+            if (peek_is(p, TOK_RPAREN) || peek_is(p, TOK_COMMA)) {
+                char summary[160], help[160];
+                snprintf(summary, sizeof summary, "expected a default value, found %s",
+                         token_kind_describe(peek(p)->kind));
+                snprintf(help, sizeof help, "give the default a value: `%s: int = 0`", name->text);
+                error_at(p, peek(p), summary, "here", help);
+                return false;
+            }
             slot->default_value = parse_expression(p);
             if (slot->default_value == NULL) return false;
         }
         if (peek_is(p, TOK_COMMA)) {
             advance(p);
+            if (peek_is(p, TOK_RPAREN)) {
+                error_at(p, peek(p), "expected a parameter after `,`, found `)`", "here",
+                         "remove the trailing comma");
+                return false;
+            }
             continue;
         }
         return true;
@@ -467,6 +485,19 @@ static Expr *parse_lambda(Parser *p) {
     }
     if (!expect(p, TOK_FAT_ARROW, "`=>`", "a lambda is written `fn(x) => x * 2`; "
                 "a function with a block body is declared with `fn name(x: int):`")) goto fail;
+    switch (peek(p)->kind) {
+    case TOK_NEWLINE: case TOK_EOF: case TOK_RETURN: case TOK_BREAK: case TOK_CONTINUE:
+    case TOK_LET: case TOK_VAR: case TOK_WHILE: case TOK_FOR: case TOK_IF: {
+        char summary[160];
+        snprintf(summary, sizeof summary, "expected an expression after `=>`, found %s",
+                 token_kind_describe(peek(p)->kind));
+        error_at(p, peek(p), summary, "a lambda body is one expression",
+                 "write `fn(x) => x * 2`; for statements declare a named function: `fn name(...):`");
+        goto fail;
+    }
+    default:
+        break;
+    }
     f->expr_body = parse_expression(p);
     if (f->expr_body == NULL) goto fail;
     Expr *e = expr_new(EXPR_LAMBDA, kw->line, kw->column);
@@ -851,7 +882,7 @@ static Stmt *parse_return(Parser *p) {
         s->as.return_.value = parse_expression(p);
         if (s->as.return_.value == NULL) goto fail;
     }
-    if (!expect_end_of_line(p, NULL)) goto fail;
+    if (!expect_end_of_line(p, "`return` takes one expression")) goto fail;
     return s;
 fail:
     stmt_free(s);
@@ -971,9 +1002,19 @@ static Stmt *parse_statement(Parser *p) {
         return parse_while(p);
     case TOK_FOR:
         return parse_for(p);
-    case TOK_FN:
-        if (peek_at(p, 1)->kind == TOK_IDENT) return parse_fn_decl(p);
+    case TOK_FN: {
+        Token *next = peek_at(p, 1);
+        if (next->kind == TOK_IDENT) return parse_fn_decl(p);
+        if (next->kind == TOK_RESERVED) { reserved_word_error(p, next); return NULL; }
+        if (next->kind != TOK_LPAREN) {
+            char summary[160];
+            snprintf(summary, sizeof summary, "expected a function name after `fn`, found %s",
+                     token_kind_describe(next->kind));
+            error_at(p, next, summary, "here", "write `fn name(...):`, or `fn(x) => ...` for a lambda");
+            return NULL;
+        }
         return parse_expr_stmt(p);
+    }
     case TOK_RETURN:
         return parse_return(p);
     case TOK_BREAK:

@@ -175,6 +175,7 @@ void rt_shutdown(void) {
 
 const char *value_type_name(Value v) {
     switch (v.kind) {
+    case VAL_UNSET: return "unset";
     case VAL_NULL: return "null";
     case VAL_BOOL: return "bool";
     case VAL_INT: return "int";
@@ -231,6 +232,9 @@ static void print_float(double f, FILE *out) {
 
 void value_print(Value v, FILE *out) {
     switch (v.kind) {
+    case VAL_UNSET:
+        fputs("<unset>", out);
+        break;
     case VAL_NULL:
         fputs("null", out);
         break;

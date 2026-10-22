@@ -1,0 +1,10 @@
+arete 0.1
+fn f(x: float) -> float:
+    return x
+let g = f
+print(g(x = 1))
+print(g(2))
+fn show(x: float, y: float = 1):
+    print(x + y)
+let s = show
+s(y = 2, x = 3)

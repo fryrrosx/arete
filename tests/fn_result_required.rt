@@ -1,0 +1,6 @@
+arete 0.1
+fn run(f: fn() -> int) -> int:
+    return f()
+fn say():
+    print("x")
+print(run(say))

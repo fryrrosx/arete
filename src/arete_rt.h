@@ -86,6 +86,8 @@ typedef struct ObjEnv {
     Binding *names;
     size_t name_count;
     size_t name_capacity;
+    size_t *name_index;       /* hash table over names: binding index + 1, 0 is empty */
+    size_t name_index_size;
     struct ObjEnv *track_prev, *track_next;   /* the list rt_shutdown sweeps */
 } ObjEnv;
 

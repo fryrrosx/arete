@@ -474,7 +474,12 @@ static bool eval_range(Interp *in, const Expr *e, Value *out) {
 /* ---- calls ------------------------------------------------------------ */
 
 static bool call_print(Interp *in, const Expr *call, Value *args, size_t count) {
-    if (count != 1 || call->as.call.names[0] != NULL) {
+    if (count == 1 && call->as.call.names[0] != NULL) {
+        char summary[160];
+        snprintf(summary, sizeof summary, "`print` has no parameter `%s`", call->as.call.names[0]);
+        return fail(in, call->as.call.args[0], summary, "named argument here", "write print(x)");
+    }
+    if (count != 1) {
         char label[80];
         snprintf(label, sizeof label, "called with %zu argument%s", count, count == 1 ? "" : "s");
         return fail(in, call, "print takes exactly one argument", label, "write print(x)");
@@ -482,6 +487,33 @@ static bool call_print(Interp *in, const Expr *call, Value *args, size_t count) 
     value_print(args[0], stdout);
     fputc('\n', stdout);
     return true;
+}
+
+/* The runtime safety net of the type checker: a value against a written
+ * annotation. Only the simple names and `fn` are judged (the checker saw
+ * everything else before the program ran); an int arriving where a float
+ * is annotated is converted, as the checker's EXPR_WIDEN does. */
+static const char *annotation_mismatch(const TypeExpr *te, Value *v) {
+    if (te == NULL) return NULL;
+    if (te->kind == TYPE_FN) return value_is(*v, OBJ_FUNCTION) ? NULL : "fn";
+    if (te->kind != TYPE_NAME || te->item_count > 0) return NULL;
+    const char *n = te->name;
+    if (strcmp(n, "int") == 0) return v->kind == VAL_INT ? NULL : "int";
+    if (strcmp(n, "float") == 0) {
+        if (v->kind == VAL_INT) { *v = value_float((double)v->as.integer); return NULL; }
+        return v->kind == VAL_FLOAT ? NULL : "float";
+    }
+    if (strcmp(n, "string") == 0) return value_is(*v, OBJ_STRING) ? NULL : "string";
+    if (strcmp(n, "bool") == 0) return v->kind == VAL_BOOL ? NULL : "bool";
+    if (strcmp(n, "range") == 0) return value_is(*v, OBJ_RANGE) ? NULL : "range";
+    return NULL;
+}
+
+static bool fail_expected(Interp *in, const Expr *at, const char *want, Value found,
+                          const char *label, const char *help) {
+    char summary[160];
+    snprintf(summary, sizeof summary, "expected %s, found %s", want, value_type_name(found));
+    return fail(in, at, summary, label, help);
 }
 
 /* Binds the arguments of `call` to the parameters of `f` in `env`: the
@@ -525,8 +557,16 @@ static bool bind_arguments(Interp *in, const Expr *call, const FnProto *f, Value
                 return fail(in, arg, summary, "second time here", "it was already passed by position");
             }
         }
-        value_retain(args[i]);
-        env->slots[index] = args[i];
+        Value v = args[i];
+        const char *want = annotation_mismatch(f->params[index].type, &v);
+        if (want != NULL) {
+            char label[120], help[200];
+            snprintf(label, sizeof label, "this argument is %s", value_type_name(v));
+            snprintf(help, sizeof help, "parameter `%s` of `%s` is %s", f->params[index].name, name, want);
+            return fail_expected(in, arg, want, v, label, help);
+        }
+        value_retain(v);
+        env->slots[index] = v;
     }
     for (size_t k = 0; k < f->param_count; k++) {
         if (env->slots[k].kind == VAL_UNSET && f->params[k].default_value == NULL) {
@@ -587,6 +627,16 @@ static bool call_function(Interp *in, const Expr *call, ObjFunction *f, Value *a
         } else if (flow == FLOW_RETURN) {
             *out = in->return_value;
             in->return_value = value_null();
+            const char *want = annotation_mismatch(proto->result, out);
+            if (want != NULL) {
+                char label[120], help[200];
+                snprintf(label, sizeof label, "`%s` returned %s", proto->name, value_type_name(*out));
+                snprintf(help, sizeof help, "`%s` is declared to return %s", proto->name, want);
+                in->source = caller_source;
+                value_release(*out);
+                *out = value_null();
+                ok = fail_expected(in, call, want, *out, label, help);
+            }
         } else if (proto->result != NULL) {
             in->source = caller_source;
             ok = fail_no_return(in, call, proto);
@@ -658,8 +708,13 @@ static bool eval(Interp *in, const Expr *e, Value *out) {
     case EXPR_WIDEN: {
         Value v;
         if (!eval(in, e->as.widen.operand, &v)) return false;
-        *out = v.kind == VAL_INT ? value_float((double)v.as.integer) : v;
-        return true;
+        if (v.kind == VAL_INT) { *out = value_float((double)v.as.integer); return true; }
+        if (v.kind == VAL_FLOAT) { *out = v; return true; }
+        char label[120];
+        snprintf(label, sizeof label, "this is %s", value_type_name(v));
+        value_release(v);
+        return fail_expected(in, e->as.widen.operand, "float", v, label,
+                             "a name was redeclared with another type after this code was checked");
     }
     case EXPR_LAMBDA:
         env_retain(in->env);

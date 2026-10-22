@@ -173,6 +173,36 @@ now a string:"*"expected int, found string"*) ;;
     *) echo "FAIL repl-types-persist: $out / $err"; fail=1 ;;
 esac
 
+# The built-in print cannot be redeclared, even in the REPL.
+err="$(printf 'let print = 5\n' | "$bin" 0.1 2>&1 >/dev/null)"
+case "$err" in
+    *"\`print\` is already declared"*) ;;
+    *) echo "FAIL repl-redeclare-print: $err"; fail=1 ;;
+esac
+# Two declarations of one function in a single input do not crash; the
+# second wins, as a later input would.
+out="$(printf 'fn f(a: int) -> int:\n    return a\nfn f() -> int:\n    return 1\n\nprint(f())\n' | "$bin" 0.1 2>&1)"
+[ "$out" = "1" ] || { echo "FAIL repl-fn-twice-in-one-input: $out"; fail=1; }
+# A redeclaration whose value fails at run time keeps the old name and type.
+out="$(printf 'let x = 1\nfn f() -> string:\n    let y = 1 // 0\n    return "a"\n\nlet x = f()\nprint(x + 1)\n' | "$bin" 0.1 2>/dev/null)"
+[ "$out" = "2" ] || { echo "FAIL repl-failed-run-undone: $out"; fail=1; }
+# A global redeclared with another type is caught by the runtime net when
+# an already-checked function meets it.
+err="$(printf 'var x = 1\nfn g() -> float:\n    return x\n\nlet x = "a"\nprint(g())\n' | "$bin" 0.1 2>&1 >/dev/null)"
+case "$err" in
+    *"expected float, found string"*) ;;
+    *) echo "FAIL repl-stale-type-net: $err"; fail=1 ;;
+esac
+# Shapes the depth limit must cover: an else chain and a chain of calls.
+deep="$(mktemp)"
+{ printf 'arete 0.1\nlet x = '; i=0; while [ $i -lt 2000 ]; do printf '1 if true else '; i=$((i + 1)); done; printf '1\n'; } > "$deep"
+err="$("$bin" run "$deep" 2>&1 >/dev/null; echo "code=$?")"
+case "$err" in *"expression nested too deeply"*"code=1") ;; *) echo "FAIL depth-else-chain: $err"; fail=1 ;; esac
+{ printf 'arete 0.1\nlet x = 1\nprint(x'; i=0; while [ $i -lt 2000 ]; do printf '(1)'; i=$((i + 1)); done; printf ')\n'; } > "$deep"
+err="$("$bin" run "$deep" 2>&1 >/dev/null; echo "code=$?")"
+case "$err" in *"expression nested too deeply"*"code=1") ;; *) echo "FAIL depth-call-chain: $err"; fail=1 ;; esac
+rm -f "$deep"
+
 # Empty input and empty lines are fine.
 out="$(printf '' | "$bin" 0.1 2>&1)"
 [ "$out" = "" ] || { echo "FAIL repl-empty-input: $out"; fail=1; }

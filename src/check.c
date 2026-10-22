@@ -30,12 +30,17 @@ typedef struct {
     Type *type;             /* what the name holds; for a function, its signature */
 } Decl;
 
-/* One scope at check time; the interpreter creates one ObjEnv for each. */
+/* One scope at check time; the interpreter creates one ObjEnv for each.
+ * `index` is a hash table over the names (open addressing, entries hold
+ * item index + 1, 0 is empty) so that a program with many declarations is
+ * checked in linear time. */
 typedef struct Scope {
     struct Scope *parent;
     Decl *items;
     size_t count;
     size_t capacity;
+    size_t *index;
+    size_t index_size;
     int slot_count;         /* slots handed out so far */
     bool is_global;
 } Scope;
@@ -80,12 +85,43 @@ static Scope *scope_new(Scope *parent) {
 static void scope_free(Scope *s) {
     for (size_t i = 0; i < s->count; i++) free(s->items[i].name);
     free(s->items);
+    free(s->index);
     free(s);
 }
 
+static size_t hash_name(const char *name) {
+    size_t h = 1469598103934665603u;                   /* FNV-1a */
+    for (; *name != '\0'; name++) h = (h ^ (unsigned char)*name) * 1099511628211u;
+    return h;
+}
+
+static void index_insert(Scope *s, size_t item) {
+    size_t at = hash_name(s->items[item].name) & (s->index_size - 1);
+    while (s->index[at] != 0) at = (at + 1) & (s->index_size - 1);
+    s->index[at] = item + 1;
+}
+
+/* Rebuilds the hash index from the items (after growth or a roll-back). */
+static void index_rebuild(Scope *s) {
+    size_t want = 16;
+    while (want < s->count * 2) want *= 2;
+    if (want != s->index_size) {
+        free(s->index);
+        s->index = xcalloc(want * sizeof(size_t));
+        s->index_size = want;
+    } else {
+        memset(s->index, 0, s->index_size * sizeof(size_t));
+    }
+    for (size_t i = 0; i < s->count; i++) index_insert(s, i);
+}
+
 static Decl *scope_find_here(Scope *s, const char *name) {
-    for (size_t i = 0; i < s->count; i++) {
-        if (strcmp(s->items[i].name, name) == 0) return &s->items[i];
+    if (s->index_size == 0) return NULL;
+    size_t at = hash_name(name) & (s->index_size - 1);
+    while (s->index[at] != 0) {
+        Decl *d = &s->items[s->index[at] - 1];
+        if (strcmp(d->name, name) == 0) return d;
+        at = (at + 1) & (s->index_size - 1);
     }
     return NULL;
 }
@@ -136,6 +172,8 @@ static Decl *scope_declare(Checker *c, Scope *s, const char *name, DeclKind kind
     d->slot = s->is_global ? SCOPE_GLOBAL : s->slot_count++;
     d->proto = NULL;
     d->type = type;
+    if (s->count * 2 > s->index_size) index_rebuild(s);
+    else index_insert(s, s->count - 1);
     return d;
 }
 
@@ -229,7 +267,7 @@ static bool unknown_name(Checker *c, const char *name, int line, int column, boo
  * say where each type came from. */
 static bool mismatch(Diag *err, int line, int column, const Type *expected, const Type *found,
                      const char *label, const char *help) {
-    char want[120], have[120], summary[280];
+    char want[200], have[200], summary[440];
     type_name(expected, want, sizeof want);
     type_name(found, have, sizeof have);
     snprintf(summary, sizeof summary, "expected %s, found %s", want, have);
@@ -238,7 +276,7 @@ static bool mismatch(Diag *err, int line, int column, const Type *expected, cons
 }
 
 static bool cannot_apply(Diag *err, const Expr *at, TokenKind op, const Type *a, const Type *b) {
-    char ta[120], tb[120], summary[300], label[260];
+    char ta[160], tb[160], summary[360], label[360];
     type_name(a, ta, sizeof ta);
     type_name(b, tb, sizeof tb);
     snprintf(summary, sizeof summary, "cannot apply `%s` to %s and %s", op_symbol(op), ta, tb);
@@ -797,7 +835,7 @@ static bool declare_functions(Checker *c, StmtList *list, Diag *err) {
         if (s->kind != STMT_FN) continue;
         FnProto *f = s->as.fn.proto;
         Decl *here = scope_find_here(c->scope, f->name);
-        if (here != NULL && !(c->repl_mode && c->scope->is_global)) {
+        if (here != NULL && (here->kind == DECL_BUILTIN || !(c->repl_mode && c->scope->is_global))) {
             return already_declared(here, f->name, s->line, s->column, err);
         }
         Type *signature = signature_of(c, f, err);
@@ -805,6 +843,7 @@ static bool declare_functions(Checker *c, StmtList *list, Diag *err) {
         Decl *d = scope_declare(c, c->scope, f->name, DECL_FN, false, s->line, signature);
         d->proto = f;
         s->as.fn.slot = d->slot;
+        s->as.fn.signature = signature;
     }
     return true;
 }
@@ -846,7 +885,7 @@ static bool check_stmt(Checker *c, Stmt *s, Diag *err) {
             return true;
         }
         Decl *here = scope_find_here(c->scope, s->as.let.name);
-        if (here != NULL && !(c->repl_mode && c->scope->is_global)) {
+        if (here != NULL && (here->kind == DECL_BUILTIN || !(c->repl_mode && c->scope->is_global))) {
             return already_declared(here, s->as.let.name, s->line, s->column, err);
         }
         Decl *d = scope_declare(c, c->scope, s->as.let.name, DECL_VAR, s->as.let.is_mutable, s->line, type);
@@ -1002,12 +1041,10 @@ static bool check_stmt(Checker *c, Stmt *s, Diag *err) {
                         "returned here", help);
     }
 
-    case STMT_FN: {
-        /* Declared by declare_functions; only the body is left to check. */
-        int hops;
-        const Decl *d = resolve(c, s->as.fn.proto->name, &hops);
-        return check_function(c, s->as.fn.proto, d->type, err);
-    }
+    case STMT_FN:
+        /* Declared by declare_functions, which left the signature on the
+         * statement (the name may already mean another function in the REPL). */
+        return check_function(c, s->as.fn.proto, s->as.fn.signature, err);
     }
     return true;
 }
@@ -1046,14 +1083,20 @@ bool check_program(Checker *c, Program *prog, Diag *err) {
         c->global_count_before = global->count;
     }
     bool ok = declare_functions(c, &prog->body, err) && check_list(c, &prog->body, err);
-    if (c->repl_mode && !ok) {
-        for (size_t i = c->undo_count; i > 0; i--) {
-            global->items[c->undo[i - 1].index] = c->undo[i - 1].old;
-        }
-        for (size_t i = c->global_count_before; i < global->count; i++) free(global->items[i].name);
-        global->count = c->global_count_before;
-    }
+    if (c->repl_mode && !ok) checker_undo_last(c);
     c->fn = NULL;
     c->top = NULL;
     return ok;
+}
+
+void checker_undo_last(Checker *c) {
+    if (!c->repl_mode || c->undo == NULL) return;
+    Scope *global = c->scope;
+    for (size_t i = c->undo_count; i > 0; i--) {
+        global->items[c->undo[i - 1].index] = c->undo[i - 1].old;
+    }
+    for (size_t i = c->global_count_before; i < global->count; i++) free(global->items[i].name);
+    global->count = c->global_count_before;
+    index_rebuild(global);
+    c->undo_count = 0;
 }

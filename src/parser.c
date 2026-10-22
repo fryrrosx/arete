@@ -575,10 +575,19 @@ static Expr *parse_primary(Parser *p) {
     }
 }
 
-/* postfix = primary { call } ; */
+/* postfix = primary { call } ; a chain of calls nests like a chain of
+ * operators, so it counts against the depth limit too. */
 static Expr *parse_postfix(Parser *p) {
     Expr *e = parse_primary(p);
-    while (e != NULL && peek_is(p, TOK_LPAREN)) e = parse_call(p, e);
+    int chain = 0;
+    while (e != NULL && peek_is(p, TOK_LPAREN)) {
+        if (p->depth + ++chain > MAX_EXPR_DEPTH) {
+            too_deep(p, peek(p));
+            expr_free(e);
+            return NULL;
+        }
+        e = parse_call(p, e);
+    }
     return e;
 }
 
@@ -697,7 +706,15 @@ static Expr *parse_expression(Parser *p) {
         return NULL;
     }
     advance(p);
+    if (++p->depth > MAX_EXPR_DEPTH) {                /* a chain of `else ... if ... else` */
+        too_deep(p, peek(p));
+        p->depth--;
+        expr_free(value);
+        expr_free(cond);
+        return NULL;
+    }
     Expr *otherwise = parse_expression(p);
+    p->depth--;
     if (otherwise == NULL) {
         expr_free(value);
         expr_free(cond);

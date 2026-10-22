@@ -43,6 +43,7 @@ void env_destroy(ObjEnv *env) {
         value_release(env->names[i].value);
     }
     free(env->names);
+    free(env->name_index);
     if (env->parent != NULL && !rt_shutting_down()) env_release(env->parent);
     free(env);
 }
@@ -52,9 +53,34 @@ Value *env_slot(ObjEnv *env, int hops, int slot) {
     return &env->slots[slot];
 }
 
+static size_t hash_name(const char *name) {
+    size_t h = 1469598103934665603u;                   /* FNV-1a */
+    for (; *name != '\0'; name++) h = (h ^ (unsigned char)*name) * 1099511628211u;
+    return h;
+}
+
+static void index_insert(ObjEnv *g, size_t item) {
+    size_t at = hash_name(g->names[item].name) & (g->name_index_size - 1);
+    while (g->name_index[at] != 0) at = (at + 1) & (g->name_index_size - 1);
+    g->name_index[at] = item + 1;
+}
+
+static void index_rebuild(ObjEnv *g) {
+    size_t want = 16;
+    while (want < g->name_count * 2) want *= 2;
+    free(g->name_index);
+    g->name_index = xcalloc(want * sizeof(size_t));
+    g->name_index_size = want;
+    for (size_t i = 0; i < g->name_count; i++) index_insert(g, i);
+}
+
 Binding *env_find_global(ObjEnv *global, const char *name) {
-    for (size_t i = 0; i < global->name_count; i++) {
-        if (strcmp(global->names[i].name, name) == 0) return &global->names[i];
+    if (global->name_index_size == 0) return NULL;
+    size_t at = hash_name(name) & (global->name_index_size - 1);
+    while (global->name_index[at] != 0) {
+        Binding *b = &global->names[global->name_index[at] - 1];
+        if (strcmp(b->name, name) == 0) return b;
+        at = (at + 1) & (global->name_index_size - 1);
     }
     return NULL;
 }
@@ -75,4 +101,6 @@ void env_define_global(ObjEnv *global, const char *name, Value value, bool is_mu
     b->name = xstrdup(name);
     b->value = value;
     b->is_mutable = is_mutable;
+    if (global->name_count * 2 > global->name_index_size) index_rebuild(global);
+    else index_insert(global, global->name_count - 1);
 }

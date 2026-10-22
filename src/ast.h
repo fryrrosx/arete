@@ -154,7 +154,7 @@ struct Stmt {
             StmtList *body;
         } for_;
         struct { Expr *value; } return_;     /* value is NULL for a bare return */
-        struct { FnProto *proto; int slot; } fn;
+        struct { FnProto *proto; int slot; void *signature; } fn;   /* signature: the checker's Type */
     } as;
 };
 

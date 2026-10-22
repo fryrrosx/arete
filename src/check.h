@@ -20,4 +20,8 @@ void checker_free(Checker *c);
 /* Checks and resolves the program, writing (hops, slot) into its names. */
 bool check_program(Checker *c, Program *prog, Diag *err);
 
+/* REPL: forgets what the last input declared, for an input that checked
+ * but failed while running (its values never reached the global scope). */
+void checker_undo_last(Checker *c);
+
 #endif

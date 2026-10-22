@@ -98,6 +98,7 @@ static int run_source(Session *s, Source *src, bool repl_mode, Mode mode) {
         code = 0;
     } else if (check_program(s->checker, prog, &err)) {
         code = interp_run(s->interp, prog, &err);
+        if (code != 0 && repl_mode) checker_undo_last(s->checker);
     }
 
 done:

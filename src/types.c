@@ -56,17 +56,36 @@ bool type_equal(const Type *a, const Type *b) {
 bool type_accepts(const Type *to, const Type *from) {
     if (to->tag == TY_ANY) return from->tag != TY_NONE;
     if (to->tag == TY_FLOAT && from->tag == TY_INT) return true;   /* widening, never the reverse */
+    if (to->tag == TY_FN && from->tag == TY_FN) {
+        /* A function whose result is dropped may be passed where one that
+         * returns nothing is expected; a built-in taking any value (print)
+         * fits any parameter type. */
+        if (to->param_count != from->param_count) return false;
+        for (size_t i = 0; i < to->param_count; i++) {
+            if (from->params[i]->tag == TY_ANY) continue;
+            if (!type_equal(to->params[i], from->params[i])) return false;
+        }
+        if (to->result == NULL) return true;
+        return from->result != NULL && type_equal(to->result, from->result);
+    }
     return type_equal(to, from);
 }
 
+/* Appends `text`; when the buffer is full the name ends in "..." so that
+ * a cut type never reads as another type. */
 static size_t append(char *buf, size_t cap, size_t at, const char *text) {
     size_t n = strlen(text);
     if (at >= cap) return at;
     size_t room = cap - at - 1;
-    if (n > room) n = room;
-    memcpy(buf + at, text, n);
-    buf[at + n] = '\0';
-    return at + n;
+    if (n <= room) {
+        memcpy(buf + at, text, n);
+        buf[at + n] = '\0';
+        return at + n;
+    }
+    memcpy(buf + at, text, room);
+    if (cap > 4) memcpy(buf + cap - 4, "...", 3);      /* over whatever was written last */
+    buf[cap - 1] = '\0';
+    return cap;
 }
 
 static size_t write_type(const Type *t, char *buf, size_t cap, size_t at) {

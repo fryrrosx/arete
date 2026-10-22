@@ -206,6 +206,14 @@ limited (SPEC §3) so deep input is an error, not a crash.
 - The phase 8 review workflow's verify agents all failed on a usage limit:
   when a workflow result says "refuted" with reason "no verdict", nothing
   was refuted. Read the journal.
+- A statement that re-resolves its own declaration by name gets another
+  declaration's data when the REPL allows redeclaration: the phase 10
+  checker crashed on two `fn f` in one input. Keep what a declaration pass
+  computed on the statement itself (`Stmt.as.fn.signature`).
+- A static type system needs its runtime net wherever a value can bypass
+  the checker: named arguments through function values, a REPL global
+  redeclared with another type, a run that fails after the checker
+  committed a declaration (`checker_undo_last`).
 - Never change a `SPEC.md` decision silently; never implement `%`; never edit
   the vendored linenoise body.
 

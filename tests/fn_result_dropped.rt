@@ -1,0 +1,10 @@
+arete 0.1
+fn run(f: fn()):
+    f()
+let g = fn() => 5
+run(fn() => 5)
+run(g)
+fn five() -> int:
+    return 5
+run(five)
+print("ok")

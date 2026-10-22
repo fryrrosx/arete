@@ -12,7 +12,15 @@ One line per phase. Phase numbers refer to `ROADMAP.md`.
   converted where a `float` is expected, lambda parameters are inferred
   from the expected function type, annotations of later phases name their
   phase; `int ** int` is an `int` and a negative exponent is a runtime
-  error; the REPL keeps types across inputs; 34 new tests.
+  error; the REPL keeps types across inputs; 34 new tests. Review round:
+  a named argument through a function value is type-checked and widened
+  when the call runs, `print` fits any `fn(T)`, a function returning a
+  value fits `fn()`, two declarations of one function in a REPL input no
+  longer crash, a run-time failure undoes the input's declarations, the
+  built-in `print` cannot be redeclared in the REPL, else chains and call
+  chains count against the depth limit, long type names are cut with
+  `...`, name lookup in scopes is hashed (100000 declarations check in
+  0.2 s instead of 38 s).
 
 - Phase 9: the stage C syntax decided and recorded (SPEC sections 2.4,
   2.5, 2.7, 5 and 6): methods only on strings and collections, `List` and

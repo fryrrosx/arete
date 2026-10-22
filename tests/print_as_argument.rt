@@ -1,0 +1,6 @@
+arete 0.1
+fn run1(f: fn(int)):
+    f(7)
+run1(print)
+let p: fn(string) = print
+p("via p")

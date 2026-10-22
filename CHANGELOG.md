@@ -4,6 +4,15 @@ One line per phase. Phase numbers refer to `ROADMAP.md`.
 
 ## Unreleased
 
+- Phase 9: the stage C syntax decided and recorded (SPEC sections 2.4,
+  2.5, 2.7, 5 and 6): methods only on strings and collections, `List` and
+  `MutableList` (likewise Map and Set), `{}` as an empty Map, `when` branch
+  bodies and blocks, untyped `throws` with `finally`, explicit `self`,
+  Kotlin-style parent lists with `override`, `enum`, explicit type
+  arguments `f<T>()`, `use ... as` and `use ... { names }`, destructuring
+  `let (x, y) = p`; grammar sketches in GRAMMAR.md; examples 08 to 15
+  rewritten; the type checker starts in phase 10.
+
 - Phases 7 and 8 review: a function without `-> T` called through a
   variable can no longer leak a value; a lambda may call a function that
   returns nothing; reading a name whose `let` has not run is the error

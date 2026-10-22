@@ -1,21 +1,21 @@
 arete 0.1
 # runs-after: phase 12
 
-var nums = [3, 1, 2]                # List<int>, inferred
-nums.add(4)                         # OPEN(9): mutability rules and method names
+var nums: MutableList<int> = [3, 1, 2]   # the literal takes the type the context expects
+nums.add(4)                         # only a MutableList has add/sort
 print(nums)
 print(nums.len())
 print(nums[0])
 nums.sort()
 print(nums)
 
-let ages = {"ann": 31, "bob": 25}   # OPEN(9): Map literal; iterates in insertion order
+let ages = {"ann": 31, "bob": 25}   # Map<string, int>, iterates in insertion order
 print(ages["ann"])
 print("bob" in ages)
-for (name, age) in ages:            # OPEN(9): destructuring in for
-    print(name + " " + str(age))    # OPEN(9): str() conversion
+for (name, age) in ages:            # destructuring a Map entry
+    print(name + " " + str(age))    # str() turns a value into its printed form
 
-var tags: Set<string> = Set()       # empty container: annotation, no type arguments at the call
+var tags: MutableSet<string> = Set()  # a set is always spelled with its name
 tags.add("a")
 tags.add("a")
 print(tags.len())

@@ -3,22 +3,22 @@ arete 0.1
 
 open class Animal(name: string):               # open: may be inherited
     fn speak() -> string:
-        return self.name + " makes a sound"    # OPEN(9): self vs this
+        return self.name + " makes a sound"    # fields always through self
 
-class Dog(name: string): Animal(name):         # OPEN(9): here ':' would mean three things
-    fn speak() -> string:                      # OPEN(9): override keyword?
+class Dog(name: string): Animal(name):         # parents after the header's `:`
+    override fn speak() -> string:             # override is required
         return self.name + " barks"
 
 interface Shape:
     fn area() -> float
 
-class Square(side: float): Shape:               # OPEN(9): interface implementation spelling
+class Square(side: float): Shape:               # an interface is a parent without arguments
     fn area() -> float:
         return self.side * self.side
 
 data class Point(x: int, y: int)
 
-enum Color:                                    # OPEN(9): enum spelling
+enum Color:
     red
     green
     blue
@@ -33,7 +33,9 @@ let p = Point(1, 2)
 let q = Point(1, 2)
 print(p)
 print(p == q)                 # data class: structural equality
-print(p.copy(y = 5))          # OPEN(9): data class method names and print format
+print(p.copy(y = 5))
+let (px, py) = q              # destructuring, by field order
+print(px + py)
 
 let c = Color.green
 print(c)
@@ -51,5 +53,6 @@ print(c == Color.green)
 # Point(x=1, y=2)
 # true
 # Point(x=1, y=5)
+# 3
 # Color.green
 # true

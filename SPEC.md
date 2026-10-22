@@ -106,10 +106,10 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 | Integer overflow | Runtime error. Wrapping operations come later as library functions. A `bigint` type may come in the standard library | P1 |
 | Union types | `int \| string`, as in TypeScript | PDF |
 | Nullability | Forbidden by default. `string?` is the nullable string type and the only spelling: `string \| null` is an error with hint `write string?`. `??` gives a default, `?.` is a safe call. Checks are static (compile time) | PDF (`?`, `??`) / P1-default (`?.`, single spelling) |
-| Strings | Immutable. `s[i]` is a one-character string (there is no `char` type); `s[a..b]` is a slice with the end excluded. Methods vs functions (`s.len()` vs `len(s)`), repeat with `*`, substring test with `in`: open | P1-default (indexing, slicing, no `char`) / OPEN(9) (methods, repeat, `in`) |
-| Collections | `List<T>` literal `[1, 2]`; `Map<K, V>` literal `{"a": 1}`, iterated in insertion order, `m[k]` and `k in m`; `Set<T>`. An empty generic container is written with an annotation, `var s: Set<string> = Set()`, so no example needs explicit type arguments at a call. Mutability of a `let`-bound collection, `List` vs `MutableList`, method names, the meaning of empty `{}`: open | P1-default (literals, insertion order, annotated empty form) / OPEN(9) (mutability, names, empty `{}`) |
+| Strings | Immutable. `s[i]` is a one-character string (there is no `char` type); `s[a..b]` is a slice with the end excluded. Everything else is a method: `s.len()`, `s.upper()`, `s.lower()`, `s.split(",")`, `s.trim()`, `s.starts_with("a")`, `s.find("x")` (names fixed in phase 11); there are no free functions like `len(s)`. `"ab" * 3` repeats, `"ar" in s` tests for a substring, `str(x)` turns any value into its printed form (a built-in function like `print`). Raw strings `r"..."` have no escapes and no interpolation | P1-default (indexing, slicing, no `char`) / P9 (methods only, `*`, `in`) / P9-default (`str()`, raw strings) |
+| Collections | Two types per container, as in Kotlin: `List<T>` is read-only, `MutableList<T>` adds `add`, `remove`, `sort`, `xs[i] = v`; likewise `Map<K, V>` / `MutableMap<K, V>` (`m[k] = v`, `remove`) and `Set<T>` / `MutableSet<T>` (`add`, `remove`). A literal `[1, 2]` or `{"a": 1}` takes the type its context expects (`var xs: MutableList<int> = [1, 2]`) and is a `List`/`Map` otherwise. Whether a collection can change is therefore visible in its type, not in `let` vs `var`; phase 30 builds "only immutable data through a channel" on this. `Map` iterates in insertion order, `m[k]` reads, `k in m` tests. Empty `{}` is an empty `Map`; a set is always spelled with its name: `var s: Set<string> = Set()`, `Set([1, 2])`, `MutableSet<int>()`. Common methods: `len()`, `contains` via `in`, `keys()`, `values()`, `sorted()` returns a new list, `sort()` sorts a `MutableList` in place; the full list is fixed in phase 12 | P1-default (literals, insertion order) / P9 (read-only and mutable types, empty `{}`, `Set()` spelling) / P9-default (method names) |
 | Variables | `let` immutable (default), `var` mutable. Assigning to a `let` is a compile error; so is using a name before its declaration or declaring the same name twice in one scope. A block (the body of `if`, later loops and functions) is a scope: names declared inside end with it, and an inner block may shadow an outer name. In the REPL a name may be declared again | PDF / P5-default (declare once per scope, use after declaration) / P6-default (block scope, shadowing in inner blocks) |
-| Generics | `List<T>`, `fn first<T>(xs: List<T>) -> T`, `class Box<T>`, constraints `T: Comparable`. Explicit type arguments at a call (`json<User>()`) collide with `<` as comparison; the spelling is decided in phase 9, and the examples that need it are marked OPEN | PDF / OPEN(9) (explicit type arguments, reified vs erased) |
+| Generics | `List<T>`, `fn first<T>(xs: List<T>) -> T`, `class Box<T>`, constraints `T: Comparable`. Explicit type arguments at a call are written `json<User>()`: after a name, `<` starts type arguments when a type, `>` and `(` follow (TypeScript's rule); a comparison of the shape `a < b > (c)` is refused, which chained comparisons already are. Usually the type is inferred (`let u: User = res.json()`). Type arguments exist at run time (reified): `is T` and `json<User>()` work; the interpreter passes type descriptors, LLVM later specialises | PDF / P9 (call syntax) / P9-default (reified) |
 | Memory | Automatic reference counting, no GC pauses. Manual memory only inside `unsafe` blocks | PDF |
 | Printing | `print` is a built-in function, not a keyword. It takes exactly one argument and writes it plus a newline; `print()` and `print(a, b)` are the error `print takes exactly one argument`. Floats print like Python's `repr`: the shortest digits that read back to the same value, in plain notation with a decimal point when the decimal exponent is between -4 and 15 (`3.0`, `0.0025`, `123456789.123`, `1000000000000000.0`), and in exponent notation otherwise (`1e+16`, `2.5e-05`, `5e-324`). `-0.0`, `inf`, `nan` print as written. `true`, `false` and `null` print as those words. Lists print as `[1, 2, 3]`; strings inside lists print with double quotes, `["a", "b"]` | P1-default / P6-default (float format) |
 
@@ -119,14 +119,14 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 |---|---|---|
 | `if` | Statement: `if cond:` / `elif cond:` / `else:`. The condition must be `bool`; `if 1:` is an error | PDF (if) / P1-default (`elif`) / P6-default (bool condition) |
 | Conditional expression | `a if cond else b`, as in Python | P1 |
-| `when` | Pattern matching, as in Kotlin. Works as a statement and as a value, but as a value only as the complete right-hand side of `let`, `var`, `=` or after `return`; never inside brackets and never as an operand. Branches: `value ->`, `v1, v2 ->`, `in range ->`, `is Type ->`, `null ->`, `else ->`; inside an `is Type` branch the subject has that type. Without a subject, branches are conditions. A missing branch is a runtime error until exhaustiveness checking arrives (phase 25) | PDF (when) / P1 (value position) / P1-default (branch spellings as in the examples) / OPEN(9) (range pattern spelling, branch bodies, block branches) |
+| `when` | Pattern matching, as in Kotlin. Works as a statement and as a value, but as a value only as the complete right-hand side of `let`, `var`, `=` or after `return`; never inside brackets and never as an operand. Branches: `value ->`, `v1, v2 ->`, `in 3..10 ->`, `is Type ->`, `null ->`, `else ->`; inside an `is Type` branch the subject has that type. Without a subject, branches are conditions. After `->` comes one expression or one simple statement (`return x`, `throw e`, `break`, `print(...)`, an assignment); a longer branch ends its line with `->` and continues as an indented block. `when` used as a value needs an expression in every branch (in a block, its last line). A missing branch is a runtime error until exhaustiveness checking arrives (phase 25) | PDF (when) / P1 (value position) / P1-default (branch spellings as in the examples) / P9 (range pattern `in a..b`, branch bodies, block branches) |
 | Loops | `while cond:`; `for x in iterable:`; `break`, `continue`. The loop variable of `for` is a fresh immutable binding on every iteration (a closure made inside the loop keeps its own), and in phase 7 it is a single name or `_`. `break`/`continue` outside a loop and `return` outside a function are compile errors | PDF / P7-default (per-iteration variable, errors) |
 | Ranges | `a..b` excludes `b`, `a..=b` includes `b`; both ends are `int`. A range is a value: `let r = 0..3` and `print(r)` (shows `0..3`) work; `==` is true when two ranges hold the same ints (`0..3 == 0..=2`, and every empty range equals every other). `..` sits between the comparison and `+` levels and does not chain | P7 (spelling) / P7-default (value, levels) |
 | Functions | `fn name(a: int, b: string = "x") -> T:`; `return`; default values; named arguments at the call site. Omitting `-> T` means the function returns nothing: its call cannot be used as a value (a compile error when the callee is a declared function, a runtime error when it is a function value), and a bare `return` is allowed only there; a function with `-> T` that reaches its end without `return` is a runtime error. A name whose `let` has not run yet (a hoisted function called too early) is the runtime error `` `x` has no value yet ``. Nested `fn` declarations are allowed. Since assignment is a statement, `f(a = 1)` is always a named argument. Functions are visible in their whole scope, so a top-level `fn` may be called above its declaration and two functions may call each other; `let`/`var` are not hoisted. Parameters need a type and are immutable; `_` may appear as a parameter name more than once and is never read; a default value is evaluated at every call and may use the parameters to its left; positional arguments come before named ones; a function name cannot be reassigned or redeclared in its scope. At most 1000 calls may be nested; the 1001st is the runtime error `too many nested calls` | PDF (fn) / P1-default (defaults, named args, no-return form, nested fn) / P7 (visibility) / P7-default (the rest) |
 | Lambdas and closures | Functions are values: they can be stored, passed and returned, print as `<fn name>` (`<fn lambda>` for a lambda) and compare equal only to themselves. Closures capture variables by reference: an inner function sees and changes the same variable as its enclosing scope. A lambda is `fn(x) => x * 2`: parameters with optional types, an optional `-> T`, and one expression after `=>` that extends as far right as possible; no default values. A lambda without `-> T` whose body is a call passes on what that call returns, possibly nothing: `fn(x) => print(x)` is a lambda that returns nothing. There is no block lambda: multi-line logic is a nested named `fn`, which is a closure too. `print` is an ordinary function value | P7 (spelling, capture by reference, no block lambda) / P7-default (printing, equality, `print` as a value) |
-| Errors | A function that can fail is marked `throws`; the compiler refuses an unhandled call. `throw Error("...")`, `try:` / `catch e:`, `e.message` | PDF (throws, try/catch) / P1-default (`Error`, `e.message`) / OPEN(9) (typed throws, `finally`/`defer`, printing an `Error` value) |
-| Classes | `class Name(params):`, methods inside; constructor parameters become fields; `self`; closed by default, `open` allows inheritance; `interface`; `data class` with structural `==`, a printed form `Point(x=1, y=2)` and `copy`; `enum` | PDF (class, open, interface, data class) / P1-default (parameters are fields) / OPEN(9) (`self` vs `this`, inheritance and interface spelling, `override`, data class method names and print format, `enum`) |
-| Modules | One file = one module. Everything private, `pub` exports. `use "./geometry"` imports your own file; the module is then available under the file name without `.rt`, as `geometry.square` | PDF (module, pub) / P1-default (`use "./path"`, file-stem name) / OPEN(9) (alias, selective import, top-level code, cycles) |
+| Errors | A function that can fail is marked `throws`, with no type after it; the compiler refuses an unhandled call. Only `Error` and its subclasses can be thrown: `throw Error("...")`, `throw IOError("...")`. `try:` / `catch e:` catches everything, `catch e is IOError:` selectively, several `catch` in a row are tried in order; `finally:` runs in every case; there is no `defer`. `e.message`; `print(e)` shows `Error: message` (the class name, then the message). A function that calls a throwing parameter is itself marked `throws`; `rethrows` stays reserved until it is needed | PDF (throws, try/catch) / P1-default (`Error`, `e.message`) / P9 (untyped `throws`, only `Error` values, `finally`, no `defer`) / P9-default (`catch e is T`, printing) |
+| Classes | `class Name(params):`, methods inside; constructor parameters become fields. `self` is the object inside a method, always written explicitly (`self.name`), never a parameter; a bare `name` in a method is a local or a global, never a field. Closed by default, `open` allows inheritance. Parents are listed after the header's `:`: `class Dog(name: string): Animal(name), Shape:` (a class with its constructor arguments, interfaces by name), then `:` and the body. A method that replaces an inherited one is written `override fn speak()`; without `override` it is the error `` `speak` already exists in `Animal` ``. `interface Shape:` lists method signatures without bodies. `data class Point(x: int, y: int)`: structural `==`, printed form `Point(x=1, y=2)`, `copy(y = 5)`, destructuring `let (x, y) = p`. `enum Color:` with one value per indented line, `Color.green`, printed as `Color.green`; `sealed class` waits for the need in phase 15 | PDF (class, open, interface, data class) / P1-default (parameters are fields) / P9 (explicit `self`, parent list after `:`, `override`, `enum` spelling, data class names) |
+| Modules | One file = one module. Everything private, `pub` exports. `use "./geometry"` imports your own file; the module is then available under the file name without `.rt`, as `geometry.square`; `use "./geometry" as geo` renames it; `use "./geometry" { square, PI }` brings those names in directly (nothing else of the module is visible then). A module's top-level code runs once, at its first import, in dependency order. A cycle of imports is a compile error naming the cycle | PDF (module, pub) / P1-default (`use "./path"`, file-stem name) / P9 (alias, selective import, top-level code once, cycles refused) |
 | Packages | `use "name@version" allow [rights]`. Rights: `net`, `fs`, `env`, `exec`, `[]` for none. Exact version pinned, plus a lock file | PDF |
 | Concurrency | Lightweight tasks: `spawn f(x)` and channels, as in Go. No async/sync split of functions | PDF / OPEN(26) (channel API) |
 | Macros | Hygienic: macro-internal names never collide with yours. Hygiene can be broken only explicitly | PDF / OPEN(26) (call marker) |
@@ -148,8 +148,8 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 | Module | Contents | Status |
 |---|---|---|
 | `io` | `print`; reading a line from the user, candidate name `input()` as in Python | PDF / OPEN(21) |
-| `strings` | length, case, split, join, search, slices | PDF / OPEN(9) (names) |
-| `collections` | `List`, `Map`, `Set` and their methods | PDF / OPEN(9) (names) |
+| `strings` | length, case, split, join, search, slices: methods on `string` (phase 11 fixes the list) | PDF / P9 (methods) |
+| `collections` | `List`/`MutableList`, `Map`/`MutableMap`, `Set`/`MutableSet` and their methods (phase 12 fixes the list) | PDF / P9 (two types per container) |
 | `math` | `sqrt`, `pow`, `abs`, `min`, `max`, constants | PDF / OPEN(21) |
 | `fs` | files and directories; needs the `fs` right | PDF / OPEN(21) |
 | `env` | environment variables; needs `env` | PDF / OPEN(21) |
@@ -439,6 +439,28 @@ fn fib(n: int) -> int:
 print("Hi, {name}! Next year: {year + 1}")
 print("literal braces: {{x}}")
 print('single "quotes" inside')
+print(r"raw: no {interpolation} and no \n")
+print(name.len())                      # methods, never len(name)
+print(name.upper())
+print("ab" * 3)                        # abab ab
+print("ar" in name)                    # substring test
+print("age " + str(42))
+```
+
+### Collections
+
+```
+var nums: MutableList<int> = [3, 1, 2]  # the literal takes the expected type
+nums.add(4)
+nums.sort()
+let fixed = [1, 2, 3]                  # List<int>: no add, no sort
+let ages = {"ann": 31, "bob": 25}      # Map<string, int>
+print(ages["ann"])
+print("bob" in ages)
+for (name, age) in ages:               # destructuring a Map entry
+    print(name + " " + str(age))
+var empty = {}                         # an empty Map
+var tags: MutableSet<string> = Set()   # a set is always spelled with its name
 ```
 
 ### when
@@ -447,7 +469,7 @@ print('single "quotes" inside')
 let word = when x:
     0 -> "zero"
     1, 2 -> "one or two"
-    in 3..10 -> "small"       # OPEN(9)
+    in 3..10 -> "small"
     else -> "big"
 
 when v:                        # v: int | string
@@ -457,6 +479,13 @@ when v:                        # v: int | string
 when:                          # no subject
     n < 0 -> print("negative")
     else -> print("other")
+
+when command:                  # a branch may be one statement, or a block
+    "quit" -> return
+    "help" ->
+        print("commands:")
+        print("quit, help")
+    else -> count += 1
 ```
 
 ### Errors
@@ -469,8 +498,13 @@ fn divide(a: int, b: int) -> int throws:
 
 try:
     print(divide(1, 0))
+catch e is IOError:
+    print("io: " + e.message)
 catch e:
-    print("caught: " + e.message)
+    print("caught: " + e.message)   # prints: caught: division by zero
+    print(e)                        # prints: Error: division by zero
+finally:
+    print("always")
 ```
 
 ### Classes
@@ -478,18 +512,23 @@ catch e:
 ```
 open class Animal(name: string):
     fn speak() -> string:
-        return self.name + " makes a sound"      # OPEN(9): self vs this
+        return self.name + " makes a sound"      # fields always through self
 
-class Dog(name: string): Animal(name):          # OPEN(9): ':' would mean three things
-    fn speak() -> string:
+class Dog(name: string): Animal(name):          # parents after the header's `:`
+    override fn speak() -> string:              # override is required
         return self.name + " barks"
 
 interface Shape:
     fn area() -> float
 
-data class Point(x: int, y: int)
+class Square(side: float): Shape:
+    fn area() -> float:
+        return self.side * self.side
 
-enum Color:                                     # OPEN(9)
+data class Point(x: int, y: int)
+let (x, y) = Point(1, 2)                        # destructuring, by position
+
+enum Color:
     red
     green
 ```
@@ -497,7 +536,9 @@ enum Color:                                     # OPEN(9)
 ### Modules and packages
 
 ```
-use "./geometry"                       # your own file; OPEN(9): alias
+use "./geometry"                       # geometry.square
+use "./geometry" as geo                # geo.square
+use "./geometry" { square, PI }        # square(4), PI
 use "json@1.4" allow []                # pure computation
 use "http@2.1" allow [net]             # network only
 use "db@3.0"   allow [net, fs]         # network and files
@@ -527,9 +568,9 @@ examples, before any code for it is written.
 
 **Phase 7 (loops, functions), decided P7:** ranges are `a..b` and `a..=b`; lambdas are `fn(x) => expr` with optional parameter types and `-> T`, and there is no block lambda (a nested named `fn` serves); closures capture by reference; `fn` are visible in their whole scope. P7-default: `not in` is one operator, implemented with collections in phase 12.
 
-**Phase 9 (stage C syntax session):** `when` branch bodies (expression only, or also `return`, `throw`, `break`, assignment) and block branches `-> :`; raw strings without interpolation; printing an `Error` value; data class destructuring; string methods vs `len()`; string repeat `*` and substring `in`; collection literals, empty `{}`, `List` vs `MutableList`, method names (`add`/`append`); destructuring in `for`; `str()` conversion; `when` branch spellings and exhaustiveness; typed `throws`, what may be thrown, `finally`/`defer`, `rethrows`; `self` vs `this`; inheritance and override spelling; interface implementation spelling; data class method names; `enum` and `sealed`; explicit type arguments at call (`json<User>()` vs `json::<User>()`); reified vs erased generics; module alias and selective import; top-level code in modules; circular imports.
+**Phase 9 (stage C syntax session), decided P9 on 2026-10-22:** methods only on strings and collections (`s.len()`), `*` repeats and `in` finds substrings; `List`/`MutableList` and the same pair for `Map` and `Set`, a literal takes the expected type, `{}` is an empty `Map`, sets are spelled `Set()`; `when` branches hold an expression or one statement, a block follows `->` at the end of a line, range patterns are `in a..b`; `throws` carries no type, only `Error` values are thrown, `finally:` exists and `defer` does not; explicit `self`; parents listed after the class header's `:`, `override` required, `enum` with one value per line; explicit type arguments `f<T>()` with the lookahead rule; `use ... as`, `use ... { names }`, top-level module code runs once, import cycles are an error; destructuring `let (x, y) = p` and `for (k, v) in m`. P9-default: `str()`, raw strings `r"..."`, reified generics, `catch e is T`, `print(e)` as `Error: message`, method names (`add`, `remove`, `len()`, `keys()`, `sorted()`/`sort()`), `sealed` and `rethrows` wait for a need. The pending examples 08–15 use this syntax.
 
-**Phase 10 (types):** incremental type checker from phase 10 (recommended) or one block after stage C as in the PDF.
+**Phase 10 (types), decided P9:** the incremental type checker starts in phase 10 (path B of the ROADMAP): `int`, `float`, `string`, `bool`, `fn`, `range`, inference for `let`, function signatures, and every later phase adds the types of its feature.
 
 **Phase 19 (rights session):** right names; static (lexical) vs dynamic rights model; transitive rights; source of a package's requirements; standard library naming; rights of foreign code.
 

@@ -1,10 +1,13 @@
 arete 0.1
 # runs-after: phase 18
 
-use "./geometry"                  # OPEN(9): alias with `as`, selective import
+use "./geometry"                  # geometry.square
+use "./geometry" as geo           # the same module under another name
+use "./geometry" { PI }           # one name brought in directly
 
 print(geometry.square(4))
-print(geometry.PI)
+print(geo.square(5))
+print(PI)
 
 # compile error if the next line is uncommented:
 # print(geometry.helper())
@@ -13,4 +16,5 @@ print(geometry.PI)
 
 # expected output:
 # 16
+# 25
 # 3.14159

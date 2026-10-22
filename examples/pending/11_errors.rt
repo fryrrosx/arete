@@ -11,12 +11,13 @@ fn safe_divide(a: int, b: int) -> int:
         return divide(a, b)
     catch e:
         print("caught: " + e.message)
+        print(e)                      # an Error prints as `Error: message`
         return 0
+    finally:
+        print("done")
 
 print(safe_divide(10, 2))
 print(safe_divide(1, 0))
-
-# OPEN(9): typed throws (`throws DivideError`), `finally` / `defer`
 
 # compile error if the next line is uncommented:
 # let x = divide(1, 0)
@@ -25,6 +26,9 @@ print(safe_divide(1, 0))
 #    = help: wrap it in `try`, or mark the enclosing function with `throws`
 
 # expected output:
+# done
 # 5
 # caught: division by zero
+# Error: division by zero
+# done
 # 0

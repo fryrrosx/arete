@@ -8,12 +8,12 @@ print("braces: {{not code}}")
 print('single "quotes" inside')
 print("tab:\tend\nnew line")
 print("back\\slash and \"quotes\"")
-print(name.len())               # OPEN(9): methods vs len()
+print(name.len())               # methods only, never len(name)
 print(name.upper())
 print(name[0])                  # indexing gives a string of length 1
 print(name[1..3])               # slice, end excluded: "ar"
-print("a" + "b" * 3)            # OPEN(9): string repeat
-print("ar" in name)             # OPEN(9): substring test with `in`
+print("a" + "b" * 3)            # `*` repeats a string
+print("ar" in name)             # `in` tests for a substring
 
 # expected output:
 # Hi, Karim! Born around 2006.

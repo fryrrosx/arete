@@ -7,11 +7,10 @@ Update it at the end of every phase.
 
 ## 1. Where things stand (2026-10-22)
 
-- Phases 0–8 are done and on `main`. Phase 9 (the stage C syntax session:
-  strings, collections, `when`, errors, classes, null, generics, modules) is
-  next, then phase 10 (the type checker decision), both asked for by Karim on
-  2026-10-22. Never start a phase, a sub-phase, or a "quick improvement" he
-  did not ask for.
+- Phases 0–9 are done and on `main`. Phase 10 (the first type checker, path
+  B) is next and was asked for by Karim on 2026-10-22 together with 7 and 9.
+  After it, nothing is pre-authorised: never start a phase, a sub-phase, or
+  a "quick improvement" he did not ask for.
 - CI (`.github/workflows/ci.yml`) is green on Ubuntu, macOS and MSVC. Every
   push to `main` runs it; keep all three jobs green.
 - Karim's open exercise: the `%` and `%=` operators (ROADMAP ritual, step 8).
@@ -210,19 +209,20 @@ limited (SPEC §3) so deep input is an error, not a crash.
 - Never change a `SPEC.md` decision silently; never implement `%`; never edit
   the vendored linenoise body.
 
-## 7. Notes for phase 9 and 10
+## 7. Notes for phase 10 and after
 
-- Phase 9 is a decisions session, not code: `ROADMAP.md` "Фаза 9" lists the
-  topics, `SPEC.md` §6 "Phase 9" the open questions. Work topic by topic:
-  write 2–5 `.rt` examples "as if the language existed", put the choices to
-  Karim with consequences and a recommended default, record each answer as a
-  `P9` row in `SPEC.md` §2 and §5, add the grammar sketch to `GRAMMAR.md`
-  "Notes" and update `examples/pending/08`–`15` to the decided syntax.
-- Phase 10 starts with one question (ROADMAP "Фаза 10"): incremental type
-  checker now (path B, recommended) or all of stage C dynamic first (path A).
-  Path B: a `types.c` pass after `check.c`, bidirectional (annotations down,
-  literals and operators up), `int/float/string/bool/fn/range`, `let` inference,
-  signatures; REPL keeps a type environment per session.
+- Phase 9 recorded the stage C syntax in `SPEC.md` §6 "Phase 9" (twelve
+  decisions by Karim, the rest P9-default) and in grammar sketches at the end
+  of `GRAMMAR.md`; `examples/pending/08`–`15` use that syntax and are the
+  acceptance tests of phases 11–18.
+- Phase 10 (decided: path B): a `types.c` pass after `check.c`, bidirectional
+  (annotations flow down, literals and operators flow up), types `int`,
+  `float`, `string`, `bool`, `fn(...) -> T`, `range`, `let` inference,
+  function signatures and calls, `if`/`while` conditions, operators; the
+  REPL keeps a type environment per session like the checker's scope. The
+  "Готово" criteria: `var x = 5` then `x = "a"` is `expected int, found
+  string`; a string passed to `fn f(a: int)` is an error with a hint. Every
+  later phase adds its feature's types to that pass.
 
 ## 8. How phase 7 is built (read before touching functions)
 

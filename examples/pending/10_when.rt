@@ -1,12 +1,11 @@
 arete 0.1
 # runs-after: phase 13
-# OPEN(9): range pattern spelling and branch bodies; other branch forms are P1-default
 
 fn describe(x: int) -> string:
     return when x:
         0 -> "zero"
         1, 2 -> "one or two"
-        in 3..10 -> "small"           # OPEN(9): range pattern spelling
+        in 3..10 -> "small"           # range pattern
         else -> "big"
 
 print(describe(0))
@@ -30,6 +29,13 @@ when:                                 # no subject: first true condition wins
     n % 2 == 1 -> print("odd")
     else -> print("even")
 
+var seen = 0
+when n:                               # a branch is one statement, or a block after `->`
+    5 ->
+        seen += 1
+        print("five, seen " + str(seen))
+    else -> seen = 0
+
 # expected output:
 # zero
 # one or two
@@ -38,3 +44,4 @@ when:                                 # no subject: first true condition wins
 # string hi
 # age unknown
 # odd
+# five, seen 1

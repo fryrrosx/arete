@@ -1,0 +1,21 @@
+arete 0.1
+let a = 7 / 2
+print(a)
+let b = 7 // 2
+print(b)
+let s = "x" + "y"
+print(s)
+let r = 0..3
+print(r)
+let ok = 1 < 2 and "a" < "b"
+print(ok)
+var n = 1
+n += 2
+n *= 3
+print(n)
+var t = "a"
+t += "b"
+print(t)
+let fl = 2 ** 3
+print(fl)
+print(2.0 ** -1)

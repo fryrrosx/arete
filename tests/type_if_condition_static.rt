@@ -1,0 +1,4 @@
+arete 0.1
+fn f(n: int):
+    if n:
+        print(n)

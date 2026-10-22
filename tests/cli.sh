@@ -163,6 +163,16 @@ out="$(printf 'fn f(a: int) -> int:\n    return a\n\nfn f(a: int, b: int) -> int
 out="$(printf 'print((1 +\n\n2))\n' | "$bin" 0.1 2>&1)"
 [ "$out" = "3" ] || { echo "FAIL repl-open-bracket-blank-line: $out"; fail=1; }
 
+# Types persist in the REPL: a variable keeps its type across inputs, and
+# a redeclaration may change it.
+out="$(printf 'var x = 5\nx = "a"\nx = 6\nprint(x)\nlet x = "now a string"\nprint(x)\n' | "$bin" 0.1 2>/dev/null)"
+err="$(printf 'var x = 5\nx = "a"\n' | "$bin" 0.1 2>&1 >/dev/null)"
+case "$out:$err" in
+    "6
+now a string:"*"expected int, found string"*) ;;
+    *) echo "FAIL repl-types-persist: $out / $err"; fail=1 ;;
+esac
+
 # Empty input and empty lines are fine.
 out="$(printf '' | "$bin" 0.1 2>&1)"
 [ "$out" = "" ] || { echo "FAIL repl-empty-input: $out"; fail=1; }

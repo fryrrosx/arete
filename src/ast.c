@@ -81,6 +81,9 @@ void expr_free(Expr *e) {
     case EXPR_LAMBDA:
         fn_proto_free(e->as.lambda.proto);
         break;
+    case EXPR_WIDEN:
+        expr_free(e->as.widen.operand);
+        break;
     }
     free(e);
 }

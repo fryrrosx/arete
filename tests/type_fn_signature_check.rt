@@ -1,0 +1,9 @@
+arete 0.1
+fn fib(n: int) -> int:
+    return n if n < 2 else fib(n - 1) + fib(n - 2)
+fn describe(n: int, suffix: string = "!") -> string:
+    return "n" + suffix
+print(fib(10))
+print(describe(1))
+let h = fib
+print(h(7))

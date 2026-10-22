@@ -1,0 +1,4 @@
+arete 0.1
+fn f(x: int):
+    for i in x:
+        print(i)

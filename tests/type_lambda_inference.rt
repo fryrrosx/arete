@@ -1,0 +1,12 @@
+arete 0.1
+fn apply(f: fn(int) -> int, v: int) -> int:
+    return f(v)
+print(apply(fn(x) => x * 2, 21))
+let g: fn(int, int) -> int = fn(a, b) => a - b
+print(g(10, 3))
+fn each(f: fn(int), n: int):
+    for i in 0..n:
+        f(i)
+each(fn(i) => print(i), 2)
+let typed = fn(a: int) -> float => a
+print(typed(4))

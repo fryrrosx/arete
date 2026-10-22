@@ -232,9 +232,10 @@ static bool arith(Interp *in, const Expr *at, TokenKind op, Value a, Value b, Va
             break;
         case TOK_STAR_STAR:
             if (y < 0) {
-                if (x == 0) return fail(in, at, "division by zero", "0 raised to a negative power", NULL);
-                *out = value_float(pow((double)x, (double)y));   /* 2 ** -1 is 0.5 */
-                return true;
+                /* `int ** int` is an int (phase 10 decision): a negative
+                 * exponent would need a float result. */
+                return fail(in, at, "negative exponent for an int base", "the exponent is negative here",
+                            "write the base as a float: `2.0 ** -1`");
             }
             ok = pow_checked(x, y, &r);
             break;
@@ -654,6 +655,12 @@ static bool eval(Interp *in, const Expr *e, Value *out) {
         return eval(in, c.as.boolean ? e->as.ternary.then : e->as.ternary.otherwise, out);
     }
     case EXPR_RANGE:   return eval_range(in, e, out);
+    case EXPR_WIDEN: {
+        Value v;
+        if (!eval(in, e->as.widen.operand, &v)) return false;
+        *out = v.kind == VAL_INT ? value_float((double)v.as.integer) : v;
+        return true;
+    }
     case EXPR_LAMBDA:
         env_retain(in->env);
         *out = value_function("lambda", e->as.lambda.proto, in->env, NATIVE_NONE);

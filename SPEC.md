@@ -87,7 +87,7 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 | `_` | A lone underscore is the discard name: `let _ = f()`, later `for _ in 1..=3:`. It is never declared, may be used any number of times in one scope, and cannot be read: `print(_)` is the error `` `_` cannot be read `` | P1-default |
 | Logical operators | The words `and`, `or`, `not`. Short-circuit. Operands must be `bool`; `1 and true` is an error, there is no truthiness | P1 / P6-default (strict bool) |
 | Comparison | `== != < <= > >=`. `==` compares numbers by value across `int` and `float` (`1 == 1.0` is true), strings by content, and values of different kinds are simply unequal. Ordering works between two numbers or two strings; anything else is a runtime error (a compile error from phase 10). No chaining: `a < b < c` is an error | PDF-implied / P6-default (mixed numeric equality, ordering rules) |
-| Arithmetic | `+ - * / // % **`. `/` on two ints gives a `float`; `//` is floor division; `%` is remainder with the sign of the divisor (Python semantics); `**` is power, right-associative. Unary minus is an operator, not part of the number: `-7 // 2` is `(-7) // 2`, which is `-4`; `-2 ** 2` is `-(2 ** 2)`, which is `-4` (Python). Full precedence table in section 3. `+` on two strings concatenates them; mixing a string and a number is an error. Division by zero (`/`, `//`, and `0 ** -1`) is a runtime error. `int ** negative int` gives a float, like Python. `%` is not implemented yet (Karim's exercise after phase 4) | P1 (`/`, `//`) / P1-default (`%` sign, `**`, unary minus) / P4-default (string `+`, division by zero, `**` with a negative exponent) |
+| Arithmetic | `+ - * / // % **`. `/` on two ints gives a `float`; `//` is floor division; `%` is remainder with the sign of the divisor (Python semantics); `**` is power, right-associative. Unary minus is an operator, not part of the number: `-7 // 2` is `(-7) // 2`, which is `-4`; `-2 ** 2` is `-(2 ** 2)`, which is `-4` (Python). Full precedence table in section 3. `+` on two strings concatenates them; mixing a string and a number is an error. Division by zero (`/`, `//`, and `0.0 ** -1`) is a runtime error. `int ** int` is an `int`; a negative exponent on an int base is the runtime error `negative exponent for an int base` (write `2.0 ** -1`), so every expression has one static type. `%` is not implemented yet (Karim's exercise after phase 4) | P1 (`/`, `//`) / P1-default (`%` sign, `**`, unary minus) / P4-default (string `+`, division by zero) / P10 (`int ** int` is `int`) |
 | Compound assignment | `+= -= *= /= //= %=`. Assignment is a statement, never an expression | P1-default |
 | Bitwise operators | None in 0.1: `& ^ ~ << >>` are not operators, and `\|` is only the union-type separator. Revisited when a use case appears | P1-default |
 | Integer literals | Decimal, `_` allowed between digits: `1_000_000`. Hex `0xFF`, binary `0b101` | P1-default |
@@ -101,7 +101,7 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 
 | Area | Decision | Status |
 |---|---|---|
-| Typing | Static, inferred: `let x = 5` has type `int`. Annotations optional: `let x: int = 5` | PDF |
+| Typing | Static, inferred: `let x = 5` has type `int`. Annotations optional: `let x: int = 5`. From phase 10 the checker types every expression before the program runs: a variable keeps the type of its first value (`var x = 5` then `x = "a"` is `expected int, found string`), arguments, returns and defaults must match the signature, conditions must be `bool`, `==` between types that can never be equal is an error (`1 == "a"`; numbers compare with each other). An `int` may be used where a `float` is expected (assignment, argument, return, default, a mixed conditional) and is converted on arrival; nothing else converts implicitly. A lambda's parameter types come from its annotations or from the function type the context expects; without either, `parameter `x` needs a type`. Types of later phases in an annotation (`int?`, `List<int>`, unions) report the phase they arrive in | PDF / P10 (int accepted for float, `==` of unrelated types is an error) / P10-default (the rest) |
 | Base types | `int` (64-bit signed), `float` (64-bit), `string` (immutable, UTF-8), `bool`, `null` | PDF names / P1-default sizes |
 | Integer overflow | Runtime error. Wrapping operations come later as library functions. A `bigint` type may come in the standard library | P1 |
 | Union types | `int \| string`, as in TypeScript | PDF |
@@ -314,7 +314,16 @@ Decided messages so far:
 | `fn(x = 1) => x` | `a lambda parameter cannot have a default value` | |
 | 1001 nested calls | `too many nested calls` | runtime; `the limit is 1000 nested calls` |
 | `for i in 5:` | `cannot iterate over int` | `` write a range: `for i in 0..10:` `` |
-| `0..1.5` | `range ends must be int, found float` | runtime |
+| `0..1.5` | `range ends must be int, found float` | compile time (runtime for a value the checker could not see) |
+| `var x = 5` then `x = "a"`; a wrong argument, return, default or annotation | `expected int, found string` | the label says where each type comes from (`` `x` is int ``, `this argument is string`, `returned here`) |
+| `n /= 2` on an int | `expected int, found float` | `` use `//=` for integer division `` |
+| `1 if c else "a"` | `branches of a conditional have different types: int and string` | `give both branches the same type` |
+| `1 == "a"` | `` cannot apply `==` to int and string `` | `the two sides can never be equal` |
+| `fn(x) => x` with no context | `` parameter `x` needs a type `` | `` write `fn(x: int) => ...`, or pass the lambda where a `fn(int) -> T` is expected `` |
+| a lambda with the wrong number of parameters | `expected fn(int) -> int, found a lambda with 2 parameters` | |
+| `let x: Foo = 1` | `` unknown type `Foo` `` | `the types so far are int, float, string, bool and fn(...) -> T` |
+| `let xs: List<int> = ...` before phase 12 | `` collection types like `List<int>` arrive in phase 12 `` (likewise `int?` phase 16, unions phase 13, generics phase 17, `throws` in a type phase 14) | |
+| `2 ** -1` | `negative exponent for an int base` | `` write the base as a float: `2.0 ** -1` `` |
 | `1..2..3` | `a range cannot be an end of another range` | |
 | C stack exhausted | `stack overflow` | never a crash: the walk checks its stack use |
 | `arete 0.1` on line 2 or in the REPL | `version header belongs on line 1 only` | |
@@ -570,7 +579,7 @@ examples, before any code for it is written.
 
 **Phase 9 (stage C syntax session), decided P9 on 2026-10-22:** methods only on strings and collections (`s.len()`), `*` repeats and `in` finds substrings; `List`/`MutableList` and the same pair for `Map` and `Set`, a literal takes the expected type, `{}` is an empty `Map`, sets are spelled `Set()`; `when` branches hold an expression or one statement, a block follows `->` at the end of a line, range patterns are `in a..b`; `throws` carries no type, only `Error` values are thrown, `finally:` exists and `defer` does not; explicit `self`; parents listed after the class header's `:`, `override` required, `enum` with one value per line; explicit type arguments `f<T>()` with the lookahead rule; `use ... as`, `use ... { names }`, top-level module code runs once, import cycles are an error; destructuring `let (x, y) = p` and `for (k, v) in m`. P9-default: `str()`, raw strings `r"..."`, reified generics, `catch e is T`, `print(e)` as `Error: message`, method names (`add`, `remove`, `len()`, `keys()`, `sorted()`/`sort()`), `sealed` and `rethrows` wait for a need. The pending examples 08–15 use this syntax.
 
-**Phase 10 (types), decided P9:** the incremental type checker starts in phase 10 (path B of the ROADMAP): `int`, `float`, `string`, `bool`, `fn`, `range`, inference for `let`, function signatures, and every later phase adds the types of its feature.
+**Phase 10 (types), decided P9 and P10:** the incremental type checker started in phase 10 (path B of the ROADMAP): `int`, `float`, `string`, `bool`, `fn`, `range`, inference for `let`, function signatures, lambda parameters from context; every later phase adds the types of its feature. P10: `int ** int` is `int` (negative exponent is a runtime error), `int` is accepted where `float` is expected, `==` between unrelated types is a compile error.
 
 **Phase 19 (rights session):** right names; static (lexical) vs dynamic rights model; transitive rights; source of a package's requirements; standard library naming; rights of foreign code.
 

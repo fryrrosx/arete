@@ -4,8 +4,8 @@ fn double(x: int) -> int:
 let d = double
 print(d(4))
 print(d)
-print(fn(x) => x)
+print(fn(x: int) => x)
 print(d == double)
-print(d == fn(x) => x)
+print(d == fn(x: int) => x)
 let p = print
 p("via p")

@@ -1,0 +1,17 @@
+arete 0.1
+let x: float = 1
+print(x)
+fn area(side: float) -> float:
+    return side * side
+print(area(3))
+var f = 1.5
+f = 2
+print(f)
+fn half(n: int) -> float:
+    return n
+print(half(7))
+fn scale(v: int, k: float = 2) -> float:
+    return v * k
+print(scale(3))
+let m = 1 if true else 2.5
+print(m)

@@ -1,0 +1,4 @@
+arete 0.1
+fn f(a: int):
+    print(a)
+f("x")

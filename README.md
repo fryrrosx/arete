@@ -27,9 +27,11 @@ Three ideas drive the design:
 Pre-0.1, phases 0–8 of `ROADMAP.md`: numbers, strings, `let`/`var`,
 `if/elif/else`, `while`/`for` over ranges, functions with defaults and named
 arguments, lambdas and closures, and a REPL with multi-line input and
-history. The syntax of stage C (strings, collections, `when`, errors,
-classes, null safety, generics, modules) is decided in `SPEC.md`; the type
-checker comes next (phase 10), then those constructs one by one. `SPEC.md` holds every decision made,
+history, and a static type checker (`int`, `float`, `string`, `bool`,
+`range`, function types; inference for `let` and for lambda parameters). The
+syntax of stage C (strings, collections, `when`, errors, classes, null
+safety, generics, modules) is decided in `SPEC.md`; those constructs come
+next, one phase each. `SPEC.md` holds every decision made,
 `examples/pending/` the programs the language must eventually run.
 
 ## Building

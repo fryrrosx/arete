@@ -4,6 +4,16 @@ One line per phase. Phase numbers refer to `ROADMAP.md`.
 
 ## Unreleased
 
+- Phase 10: the first type checker, inside the resolver pass: every
+  expression gets a static type (`int`, `float`, `string`, `bool`, `range`,
+  `fn(...) -> T`), variables keep the type of their first value, arguments,
+  returns, defaults and annotations are checked, conditions must be `bool`,
+  `==` between unrelated types is refused, an `int` is accepted and
+  converted where a `float` is expected, lambda parameters are inferred
+  from the expected function type, annotations of later phases name their
+  phase; `int ** int` is an `int` and a negative exponent is a runtime
+  error; the REPL keeps types across inputs; 34 new tests.
+
 - Phase 9: the stage C syntax decided and recorded (SPEC sections 2.4,
   2.5, 2.7, 5 and 6): methods only on strings and collections, `List` and
   `MutableList` (likewise Map and Set), `{}` as an empty Map, `when` branch

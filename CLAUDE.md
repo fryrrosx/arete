@@ -8,8 +8,9 @@ Full specification: `SPEC.md`. Grammar: `GRAMMAR.md`. Plan: `ROADMAP.md`.
 
 ## Implementation
 - Language: C11. Build with `make` (GNU make). Must compile with gcc, clang and MSVC.
-- Current stage: phases 0-9 done, phase 10 next (the first type checker).
-  Pipeline: lexer -> parser -> AST -> check (resolver) -> tree-walking interpreter.
+- Current stage: phases 0-10 done, phase 11 (strings) next, only when Karim
+  asks. Pipeline: lexer -> parser -> AST -> check (resolver + type checker)
+  -> tree-walking interpreter.
   The `%` operator is Karim's exercise and is intentionally not implemented.
 - No external dependencies beyond the C standard library. The one exception
   so far (decided by Karim in phase 8): `src/linenoise.c` and `src/linenoise.h`,

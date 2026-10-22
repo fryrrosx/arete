@@ -7,10 +7,9 @@ Update it at the end of every phase.
 
 ## 1. Where things stand (2026-10-22)
 
-- Phases 0–9 are done and on `main`. Phase 10 (the first type checker, path
-  B) is next and was asked for by Karim on 2026-10-22 together with 7 and 9.
-  After it, nothing is pre-authorised: never start a phase, a sub-phase, or
-  a "quick improvement" he did not ask for.
+- Phases 0–10 are done and on `main`. Nothing further is pre-authorised:
+  phase 11 (strings) starts only when Karim says so. Never start a phase, a
+  sub-phase, or a "quick improvement" he did not ask for.
 - CI (`.github/workflows/ci.yml`) is green on Ubuntu, macOS and MSVC. Every
   push to `main` runs it; keep all three jobs green.
 - Karim's open exercise: the `%` and `%=` operators (ROADMAP ritual, step 8).
@@ -143,7 +142,7 @@ make clean && make build          # leave a normal build behind
   shell tests under Git Bash. A POSIX-only source file must be guarded the way
   `src/linenoise.c` is, so that MSVC sees a non-empty, compilable unit.
 
-## 5. Code map (phase 8 state)
+## 5. Code map (phase 10 state)
 
 | File | Role |
 |---|---|
@@ -153,7 +152,8 @@ make clean && make build          # leave a normal build behind
 | `src/token.h`, `src/lexer.c/.h` | Tokens, indentation stack (INDENT/DEDENT), numbers, strings, the REPL-only rules, `lexer_input_incomplete` |
 | `src/ast.c/.h` | `Expr`, `Stmt`, `TypeExpr`, allocation helpers, freeing |
 | `src/parser.c/.h` | Pratt expression parser (`INFIX` table, levels OR=3 … POWER=12), statements, blocks, the type grammar |
-| `src/check.c/.h` | Name checker with scopes (`let` vs `var`, use before declaration, redeclaration); same shape as `Env` on purpose |
+| `src/check.c/.h` | Resolver and type checker: scopes with (hops, slot), hoisting, argument checks, static types of every expression, implicit int-to-float `EXPR_WIDEN`, REPL undo of a failed input |
+| `src/types.c/.h` | The static types (`Type`, arena, `type_from_expr`, `type_accepts`, `type_name`) |
 | `src/env.c/.h` | Run-time scope chain |
 | `src/interp.c/.h` | Tree-walking interpreter, checked 64-bit arithmetic, short-circuit `and`/`or` |
 | `src/arete_rt.h`, `src/rt_value.c` | Tagged-union `Value`, refcounted `ObjString`, Python-style float printing |
@@ -209,20 +209,26 @@ limited (SPEC §3) so deep input is an error, not a crash.
 - Never change a `SPEC.md` decision silently; never implement `%`; never edit
   the vendored linenoise body.
 
-## 7. Notes for phase 10 and after
+## 7. Notes for phase 11 and after
 
 - Phase 9 recorded the stage C syntax in `SPEC.md` §6 "Phase 9" (twelve
   decisions by Karim, the rest P9-default) and in grammar sketches at the end
   of `GRAMMAR.md`; `examples/pending/08`–`15` use that syntax and are the
   acceptance tests of phases 11–18.
-- Phase 10 (decided: path B): a `types.c` pass after `check.c`, bidirectional
-  (annotations flow down, literals and operators flow up), types `int`,
-  `float`, `string`, `bool`, `fn(...) -> T`, `range`, `let` inference,
-  function signatures and calls, `if`/`while` conditions, operators; the
-  REPL keeps a type environment per session like the checker's scope. The
-  "Готово" criteria: `var x = 5` then `x = "a"` is `expected int, found
-  string`; a string passed to `fn f(a: int)` is an error with a hint. Every
-  later phase adds its feature's types to that pass.
+- Phase 10 put the type checker inside `check.c`: `check_expr` returns a
+  `Type *` (NULL on error) and takes the expected type, which only lambdas
+  use; `type_accepts` is the one place that allows int where float is
+  expected, and `widen_if_needed` wraps such an expression in `EXPR_WIDEN`
+  so the value is converted at run time. Every later phase adds its types
+  here: strings get methods (a member-call expression and its result type),
+  collections get `List<T>` in `type_from_expr` and literals typed from the
+  expected type, and so on. The runtime checks in `interp.c` stay as a
+  safety net; their messages must keep matching the static ones.
+- Phase 11 (strings) per `ROADMAP.md`: interpolation through string parts
+  (lexer tokens `STRING_START`, `STRING_PART`, `INTERP_START`, `INTERP_END`,
+  `STRING_END`, SPEC §3), escapes, nested quotes, methods `len`, `upper`,
+  slices, `*`, `in`, `str()`, raw strings `r"..."`; `examples/pending/08_strings.rt`
+  is the acceptance test.
 
 ## 8. How phase 7 is built (read before touching functions)
 

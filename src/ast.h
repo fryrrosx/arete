@@ -81,7 +81,8 @@ typedef enum {
     EXPR_LOGICAL,    /* a and b, a or b (short-circuit) */
     EXPR_TERNARY,    /* a if c else b */
     EXPR_RANGE,      /* a..b, a..=b */
-    EXPR_LAMBDA      /* fn(x) => x * 2 */
+    EXPR_LAMBDA,     /* fn(x) => x * 2 */
+    EXPR_WIDEN       /* inserted by the checker: an int used where a float is expected */
 } ExprKind;
 
 /* How the resolver marks a name: `hops` environments outwards, then slot
@@ -111,6 +112,7 @@ struct Expr {
         struct { Expr *cond; Expr *then; Expr *otherwise; } ternary;
         struct { Expr *start; Expr *end; bool inclusive; } range;
         struct { FnProto *proto; } lambda;
+        struct { Expr *operand; } widen;
     } as;
 };
 

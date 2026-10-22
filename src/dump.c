@@ -160,6 +160,11 @@ static void dump_expr(const Expr *e, FILE *out) {
         dump_expr(e->as.range.end, out);
         fputc(')', out);
         break;
+    case EXPR_WIDEN:
+        fputs("(float ", out);
+        dump_expr(e->as.widen.operand, out);
+        fputc(')', out);
+        break;
     case EXPR_LAMBDA:
         fputs("(lambda ", out);
         dump_signature(e->as.lambda.proto, out);

@@ -291,7 +291,7 @@ static bool cannot_apply(Diag *err, const Expr *at, TokenKind op, const Type *a,
 
 static bool need_bool_type(Diag *err, const Expr *at, const Type *t, const char *what) {
     if (t->tag == TY_BOOL) return true;
-    char have[120], summary[200];
+    char have[200], summary[260];
     type_name(t, have, sizeof have);
     snprintf(summary, sizeof summary, "%s must be bool, found %s", what, have);
     diag_set(err, at->line, at->column, summary, "here", "compare explicitly, for example `x != 0`");
@@ -316,7 +316,7 @@ static bool stack_ok(Checker *c, const Expr *at, Diag *err) {
 }
 
 static bool cannot_negate(Diag *err, const Expr *at, const Type *t) {
-    char have[120], summary[160];
+    char have[200], summary[260];
     type_name(t, have, sizeof have);
     snprintf(summary, sizeof summary, "cannot negate %s", have);
     diag_set(err, at->line, at->column, summary, "here", NULL);
@@ -324,7 +324,7 @@ static bool cannot_negate(Diag *err, const Expr *at, const Type *t) {
 }
 
 static bool branches_differ(Diag *err, const Expr *otherwise, const Type *a, const Type *b) {
-    char ta[120], tb[120], summary[300];
+    char ta[200], tb[200], summary[460];
     type_name(a, ta, sizeof ta);
     type_name(b, tb, sizeof tb);
     snprintf(summary, sizeof summary, "branches of a conditional have different types: %s and %s", ta, tb);
@@ -334,7 +334,7 @@ static bool branches_differ(Diag *err, const Expr *otherwise, const Type *a, con
 }
 
 static bool range_end_not_int(Diag *err, const Expr *bad, const Type *t) {
-    char have[120], summary[160];
+    char have[200], summary[260];
     type_name(t, have, sizeof have);
     snprintf(summary, sizeof summary, "range ends must be int, found %s", have);
     diag_set(err, bad->line, bad->column, summary, "this end", "a range is `start..end` over integers");
@@ -488,11 +488,11 @@ static bool check_argument(Checker *c, Expr **arg_slot, const Type *param, const
         widen_if_needed(arg_slot, param, t);
         return true;
     }
-    char have[120], label[160], help[200];
+    char have[200], label[260], help[260];
     type_name(t, have, sizeof have);
     snprintf(label, sizeof label, "this argument is %s", have);
     if (param_name != NULL) {
-        char want[120];
+        char want[200];
         type_name(param, want, sizeof want);
         snprintf(help, sizeof help, "parameter `%s` of `%s` is %s", param_name, fn_name, want);
     } else {
@@ -522,7 +522,7 @@ static Type *check_call(Checker *c, Expr *e, bool used_as_value, Diag *err) {
         if (callee_type == NULL) return NULL;
     }
     if (callee_type->tag != TY_FN) {
-        char have[120], summary[200], label[200];
+        char have[200], summary[260], label[260];
         type_name(callee_type, have, sizeof have);
         if (callee->kind == EXPR_NAME) {
             snprintf(summary, sizeof summary, "`%s` is not a function", callee_name);
@@ -711,7 +711,7 @@ static bool declare_params(Checker *c, FnProto *f, Type **params, const char *fn
             Type *t = check_expr(c, p->default_value, params[i], true, err);
             if (t == NULL) return false;
             if (!type_accepts(params[i], t)) {
-                char want[120], help[200];
+                char want[200], help[260];
                 type_name(params[i], want, sizeof want);
                 snprintf(help, sizeof help, "parameter `%s` of `%s` is %s", p->name, fn_name, want);
                 return mismatch(err, p->default_value->line, p->default_value->column, params[i], t,
@@ -752,7 +752,7 @@ static bool check_function(Checker *c, FnProto *f, const Type *signature, Diag *
 static Type *check_lambda(Checker *c, FnProto *f, const Type *expected, Diag *err) {
     const Type *shape = (expected != NULL && expected->tag == TY_FN) ? expected : NULL;
     if (shape != NULL && shape->param_count != f->param_count) {
-        char want[120], summary[260], label[120];
+        char want[200], summary[300], label[120];
         type_name(shape, want, sizeof want);
         snprintf(summary, sizeof summary, "expected %s, found a lambda with %zu parameter%s",
                  want, f->param_count, f->param_count == 1 ? "" : "s");
@@ -872,7 +872,7 @@ static bool check_stmt(Checker *c, Stmt *s, Diag *err) {
         Type *value = check_expr(c, s->as.let.value, declared, true, err);
         if (value == NULL) return false;
         if (declared != NULL && !type_accepts(declared, value)) {
-            char have[120], label[160];
+            char have[200], label[260];
             type_name(value, have, sizeof have);
             snprintf(label, sizeof label, "this value is %s", have);
             return mismatch(err, s->as.let.value->line, s->as.let.value->column, declared, value, label,
@@ -936,7 +936,7 @@ static bool check_stmt(Checker *c, Stmt *s, Diag *err) {
             if (stored == NULL) return false;
         }
         if (!type_accepts(d->type, stored)) {
-            char want[120], label[160];
+            char want[200], label[260];
             type_name(d->type, want, sizeof want);
             const char *help = "a variable keeps the type of its first value; declare a new one for another type";
             if (s->as.assign.op == TOK_SLASH_EQUAL) {
@@ -971,7 +971,7 @@ static bool check_stmt(Checker *c, Stmt *s, Diag *err) {
         Type *iterable = check_expr(c, s->as.for_.iterable, NULL, true, err);
         if (iterable == NULL) return false;
         if (iterable->tag != TY_RANGE) {
-            char have[120], summary[160];
+            char have[200], summary[260];
             type_name(iterable, have, sizeof have);
             snprintf(summary, sizeof summary, "cannot iterate over %s", have);
             diag_set(err, s->as.for_.iterable->line, s->as.for_.iterable->column, summary,
@@ -1034,7 +1034,7 @@ static bool check_stmt(Checker *c, Stmt *s, Diag *err) {
             widen_if_needed(&s->as.return_.value, c->fn->result, t);
             return true;
         }
-        char want[120], help[200];
+        char want[200], help[260];
         type_name(c->fn->result, want, sizeof want);
         snprintf(help, sizeof help, "`%s` is declared to return %s", name, want);
         return mismatch(err, s->as.return_.value->line, s->as.return_.value->column, c->fn->result, t,

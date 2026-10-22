@@ -20,9 +20,9 @@ typedef struct {
     int line;
     int column;
     const Source *source;   /* where line/column point; NULL means the text being run */
-    char summary[200];
-    char label[200];
-    char help[240];
+    char summary[480];      /* room for "expected T, found U" with two long function types */
+    char label[480];
+    char help[320];
 } Diag;
 
 void diag_set(Diag *d, int line, int column,

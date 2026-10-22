@@ -236,7 +236,7 @@ s
 3" ] || { echo "FAIL repl-names-persist: $out"; fail=1; }
 err="$(printf 'let z = 1 // 0\nprint(z)\n' | "$bin" 0.1 2>&1 >/dev/null)"
 case "$err" in
-    *"division by zero"*"\`z\` has no value"*) ;;
+    *"division by zero"*"unknown name \`z\`"*) ;;
     *) echo "FAIL repl-failed-declaration: $err"; fail=1 ;;
 esac
 err="$(printf 'if true:\n' | "$bin" 0.1 2>&1 >/dev/null)"

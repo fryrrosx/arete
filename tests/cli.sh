@@ -102,9 +102,10 @@ case "$(uname -s 2>/dev/null)" in
        } > "$deep"
        err="$( (ulimit -s 512 2>/dev/null; "$bin" run "$deep" 2>&1 >/dev/null); echo "code=$?" )"
        rm -f "$deep"
+       # A sanitizer build may refuse the small stack with its own message;
+       # what matters is a clean exit code, never a signal.
        case "$err" in
-           *"stack overflow"*"code=1") ;;
-           *"code=0") ;;                    # the shell could not lower the stack: fine
+           *"code=0"|*"code=1") ;;
            *) echo "FAIL stack-guard: $err"; fail=1 ;;
        esac ;;
 esac

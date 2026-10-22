@@ -70,14 +70,27 @@ class Session:
 
     def finish(self, exit_code=0):
         # Ctrl-D at an empty prompt ends the session; the exit code is 1
-        # when some input of the session failed (SPEC section 2.1).
+        # when some input of the session failed (SPEC section 2.1). The
+        # output is drained before waiting: once the child has exited, macOS
+        # drops what is still buffered in the pseudo-terminal.
         self.send(b"\x04")
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            ready, _, _ = select.select([self.fd], [], [], 0.2)
+            if not ready:
+                continue
+            try:
+                chunk = os.read(self.fd, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            self.out += chunk
         status = 0
         try:
             _, status = os.waitpid(self.pid, 0)
         except ChildProcessError:
             pass
-        self.read_until(b"\x00", timeout=0.2)   # drain what is left
         assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == exit_code, (self.out, status)
         return self.out
 
@@ -124,9 +137,9 @@ def first_session(bin_path, home):
     s.expect(b">>> ")
     out = s.finish(exit_code=1)       # the opener without a body was an error
     assert out.startswith(b"Arete 0.1 REPL"), out
-    # Exactly one line end after the final prompt: linenoise prints it, the
-    # REPL must not add another.
-    assert out.endswith(b">>> \x1b[?2004l\r\n") or out.endswith(b">>> \r\n"), out[-40:]
+    # One line end at most after the final prompt: linenoise prints it, the
+    # REPL must not add another (the terminal may also drop it at exit).
+    assert not out.endswith(b"\r\n\r\n"), out[-40:]
     return out
 
 

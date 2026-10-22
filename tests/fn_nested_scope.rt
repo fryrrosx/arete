@@ -1,0 +1,7 @@
+arete 0.1
+fn outer() -> int:
+    let x = 10
+    fn inner() -> int:
+        return x + 1
+    return inner()
+print(outer())

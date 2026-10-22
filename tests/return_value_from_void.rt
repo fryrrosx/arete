@@ -1,0 +1,3 @@
+arete 0.1
+fn say():
+    return 1

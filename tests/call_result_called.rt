@@ -1,2 +1,8 @@
 arete 0.1
-print("a")("b")
+fn make_counter() -> fn() -> int:
+    var count = 0
+    fn next() -> int:
+        count += 1
+        return count
+    return next
+print(make_counter()())

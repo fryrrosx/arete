@@ -1,0 +1,17 @@
+arete 0.1
+var total = 0
+fn add(n: int):
+    total += n
+add(2)
+add(3)
+print(total)
+fn make_pair() -> fn() -> int:
+    var shared = 0
+    fn inc():
+        shared += 1
+    fn get() -> int:
+        inc()
+        inc()
+        return shared
+    return get
+print(make_pair()())

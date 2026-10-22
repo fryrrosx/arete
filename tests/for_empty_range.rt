@@ -1,0 +1,6 @@
+arete 0.1
+for i in 3..0:
+    print(i)
+for i in 5..5:
+    print(i)
+print("done")

@@ -1,0 +1,4 @@
+(fn greet (name: string greeting: string = "Hello") -> string (block (return (+ (+ greeting ", ") name))))
+(let d (lambda (x y: int) -> int (* x y)))
+(print (greet "K" greeting: "Hi"))
+(print ((d 2 3) 1))

@@ -1,0 +1,4 @@
+arete 0.1
+fn say():
+    print(1)
+let v = say()

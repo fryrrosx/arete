@@ -84,6 +84,12 @@ const char *token_kind_describe(TokenKind kind) {
     case TOK_FALSE:    return "`false`";
     case TOK_FN:       return "`fn`";
     case TOK_THROWS:   return "`throws`";
+    case TOK_WHILE:    return "`while`";
+    case TOK_FOR:      return "`for`";
+    case TOK_IN:       return "`in`";
+    case TOK_BREAK:    return "`break`";
+    case TOK_CONTINUE: return "`continue`";
+    case TOK_RETURN:   return "`return`";
     case TOK_LPAREN:   return "`(`";
     case TOK_RPAREN:   return "`)`";
     case TOK_LBRACKET: return "`[`";
@@ -94,6 +100,9 @@ const char *token_kind_describe(TokenKind kind) {
     case TOK_PIPE:     return "`|`";
     case TOK_QUESTION: return "`?`";
     case TOK_ARROW:    return "`->`";
+    case TOK_DOT_DOT:  return "`..`";
+    case TOK_DOT_DOT_EQUAL: return "`..=`";
+    case TOK_FAT_ARROW: return "`=>`";
     case TOK_PLUS:     return "`+`";
     case TOK_MINUS:    return "`-`";
     case TOK_STAR:     return "`*`";
@@ -140,6 +149,12 @@ const char *token_kind_name(TokenKind kind) {
     case TOK_FALSE:    return "FALSE";
     case TOK_FN:       return "FN";
     case TOK_THROWS:   return "THROWS";
+    case TOK_WHILE:    return "WHILE";
+    case TOK_FOR:      return "FOR";
+    case TOK_IN:       return "IN";
+    case TOK_BREAK:    return "BREAK";
+    case TOK_CONTINUE: return "CONTINUE";
+    case TOK_RETURN:   return "RETURN";
     case TOK_LPAREN:   return "LPAREN";
     case TOK_RPAREN:   return "RPAREN";
     case TOK_LBRACKET: return "LBRACKET";
@@ -150,6 +165,9 @@ const char *token_kind_name(TokenKind kind) {
     case TOK_PIPE:     return "PIPE";
     case TOK_QUESTION: return "QUESTION";
     case TOK_ARROW:    return "ARROW";
+    case TOK_DOT_DOT:  return "DOT_DOT";
+    case TOK_DOT_DOT_EQUAL: return "DOT_DOT_EQUAL";
+    case TOK_FAT_ARROW: return "FAT_ARROW";
     case TOK_PLUS:     return "PLUS";
     case TOK_MINUS:    return "MINUS";
     case TOK_STAR:     return "STAR";
@@ -183,16 +201,18 @@ static const Keyword KEYWORDS[] = {
     { "and", TOK_AND }, { "or", TOK_OR }, { "not", TOK_NOT },
     { "true", TOK_TRUE }, { "false", TOK_FALSE },
     { "fn", TOK_FN }, { "throws", TOK_THROWS },
+    { "while", TOK_WHILE }, { "for", TOK_FOR }, { "in", TOK_IN },
+    { "break", TOK_BREAK }, { "continue", TOK_CONTINUE }, { "return", TOK_RETURN },
 };
 
 /* Words reserved for later phases (SPEC.md section 2.3). Using one as a
  * name is an error from day one. The contextual modifiers `data open sealed
  * weak override pub allow` are not here: they stay ordinary identifiers. */
 static const char *const RESERVED[] = {
-    "as", "break", "catch", "class", "continue", "defer", "enum", "finally",
-    "for", "import", "in", "interface", "is", "macro", "null", "rethrows",
-    "return", "select", "self", "spawn", "super", "this", "throw", "try",
-    "unsafe", "use", "when", "while",
+    "as", "catch", "class", "defer", "enum", "finally",
+    "import", "interface", "is", "macro", "null", "rethrows",
+    "select", "self", "spawn", "super", "this", "throw", "try",
+    "unsafe", "use", "when",
 };
 
 static TokenKind classify_word(const char *text, size_t len) {
@@ -635,7 +655,10 @@ static bool lex_operator(Lexer *lx) {
         }
         emit_operator(lx, n == '=' ? TOK_SLASH_EQUAL : TOK_SLASH, n == '=' ? 2 : 1);
         return true;
-    case '=': emit_operator(lx, n == '=' ? TOK_EQUAL_EQUAL : TOK_EQUAL, n == '=' ? 2 : 1); return true;
+    case '=':
+        if (n == '>') { emit_operator(lx, TOK_FAT_ARROW, 2); return true; }
+        emit_operator(lx, n == '=' ? TOK_EQUAL_EQUAL : TOK_EQUAL, n == '=' ? 2 : 1);
+        return true;
     case '<': emit_operator(lx, n == '=' ? TOK_LESS_EQUAL : TOK_LESS, n == '=' ? 2 : 1); return true;
     case '>': emit_operator(lx, n == '=' ? TOK_GREATER_EQUAL : TOK_GREATER, n == '=' ? 2 : 1); return true;
     case '!':
@@ -645,7 +668,14 @@ static bool lex_operator(Lexer *lx) {
         return false;
     case ',': emit_operator(lx, TOK_COMMA, 1); return true;
     case ':': emit_operator(lx, TOK_COLON, 1); return true;
-    case '.': emit_operator(lx, TOK_DOT, 1); return true;
+    case '.':
+        if (n == '.') {
+            if (n2 == '=') { emit_operator(lx, TOK_DOT_DOT_EQUAL, 3); return true; }
+            emit_operator(lx, TOK_DOT_DOT, 2);
+            return true;
+        }
+        emit_operator(lx, TOK_DOT, 1);
+        return true;
     case '|': emit_operator(lx, TOK_PIPE, 1); return true;
     case '?': emit_operator(lx, TOK_QUESTION, 1); return true;
     case '[': emit_operator(lx, TOK_LBRACKET, 1); return true;

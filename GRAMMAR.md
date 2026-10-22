@@ -7,7 +7,7 @@ operators become rows of the `INFIX` table of the Pratt loop). Terminals in `UPP
 `src/lexer.c`. `{ }` means zero or more, `[ ]` means optional, `|` means or.
 
 The right-hand column says which phase implements the rule; rules marked 3
-to 6 are in the code now. `%` and `%=` are missing on purpose: they are the
+to 7 are in the code now. `%` and `%=` are missing on purpose: they are the
 phase 4 exercise.
 
 ## Rules
@@ -17,9 +17,19 @@ program        = HEADER { statement } EOF ;                                   (3
 repl_line      = { statement } EOF ;                     what the REPL parses  (3)
 HEADER         = "arete" INT "." INT NEWLINE ;      checked before tokenizing  (3)
 
-statement      = let_stmt | assign_stmt | if_stmt | expr_stmt ;              (6)
+statement      = let_stmt | assign_stmt | if_stmt | while_stmt | for_stmt
+               | fn_decl | return_stmt | break_stmt | continue_stmt
+               | expr_stmt ;                                                  (7)
 if_stmt        = "if" expression ":" block
                  { "elif" expression ":" block } [ "else" ":" block ] ;    (6)
+while_stmt     = "while" expression ":" block ;                              (7)
+for_stmt       = "for" IDENT "in" expression ":" block ;                     (7)
+fn_decl        = "fn" IDENT "(" [ params ] ")" [ "->" type ] ":" block ;     (7)
+params         = param { "," param } ;                                       (7)
+param          = IDENT ":" type [ "=" expression ] ;                         (7)
+return_stmt    = "return" [ expression ] NEWLINE ;                           (7)
+break_stmt     = "break" NEWLINE ;                                           (7)
+continue_stmt  = "continue" NEWLINE ;                                        (7)
 block          = NEWLINE INDENT statement { statement } DEDENT ;            (6)
 let_stmt       = ( "let" | "var" ) IDENT [ ":" type ] "=" expression NEWLINE ; (5)
 assign_stmt    = IDENT assign_op expression NEWLINE ;                        (5)
@@ -31,17 +41,23 @@ ternary        = or [ "if" or "else" expression ] ;                            (
 or             = and { "or" and } ;                                            (6)
 and            = not { "and" not } ;                                           (6)
 not            = "not" not | comparison ;                                      (6)
-comparison     = additive [ ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) additive ] ; (6)
+comparison     = range [ ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) range ] ;  (6)
+range          = additive [ ( ".." | "..=" ) additive ] ;                    (7)
 additive       = multiplicative { ( "+" | "-" ) multiplicative } ;            (4)
 multiplicative = unary { ( "*" | "/" | "//" ) unary } ;               (4; `%` pending)
 unary          = "-" unary | power ;                                          (4)
 power          = postfix [ "**" unary ] ;                                     (4)
-postfix        = primary { call } ;              (3: callee must be IDENT, one call)
+postfix        = primary { call } ;                        (3; any primary from 7)
 call           = "(" [ arguments ] ")" ;                                      (3)
-arguments      = expression { "," expression } ;                              (3)
+arguments      = argument { "," argument } ;                                  (7)
+argument       = [ IDENT "=" ] expression ;              (7: named arguments last)
 primary        = STRING | IDENT                                               (3)
                | INT | FLOAT | "(" expression ")"                             (4)
-               | "true" | "false" ;                                            (6)
+               | "true" | "false"                                             (6)
+               | lambda ;                                                     (7)
+lambda         = "fn" "(" [ lambda_params ] ")" [ "->" type ] "=>" expression ; (7)
+lambda_params  = lambda_param { "," lambda_param } ;                          (7)
+lambda_param   = IDENT [ ":" type ] ;                                         (7)
 
 type           = union_type ;                                                 (5)
 union_type     = postfix_type { "|" postfix_type } ;                          (5)
@@ -54,7 +70,11 @@ primary_type   = IDENT [ "<" type { "," type } ">" ]                          (5
 The levels from `or` down to `power` are one Pratt loop in `parse_binary`,
 driven by the table `INFIX` in `src/parser.c`, which mirrors the precedence
 table in SPEC.md section 3; `not` and unary `-` are prefix operators in
-`parse_prefix`; `ternary` is `parse_expression`. `comparison` has no
+`parse_prefix`; `ternary` is `parse_expression`. `range` is a row of that
+table at level 8 (the `??` of phase 16 goes between `comparison` and `range`);
+it has no repetition, a second range operator is the error `a range cannot be
+an end of another range`. The lambda body is `expression`, the lowest level:
+it extends to the next `,`, `)` or end of line. `comparison` has no
 repetition on purpose: a second comparison operator in a row is the error
 `chained comparison is not allowed`. `not` is reachable only from `and`, so
 the parser refuses it as an operand of any higher level (`1 == not x`). The
@@ -71,16 +91,22 @@ start with the same token, or the parser needs more than one token of lookahead.
 | statement | let_stmt | `let`, `var` |
 | statement | assign_stmt | IDENT |
 | statement | if_stmt | `if` |
-| statement | expr_stmt | STRING, IDENT, INT, FLOAT, `(`, `-`, `not`, `true`, `false` |
-| primary | each alternative | STRING / IDENT / INT / FLOAT / `(` / `true` / `false` |
+| statement | while_stmt, for_stmt | `while`, `for` |
+| statement | fn_decl | `fn` IDENT |
+| statement | return_stmt, break_stmt, continue_stmt | `return`, `break`, `continue` |
+| statement | expr_stmt | STRING, IDENT, INT, FLOAT, `(`, `-`, `not`, `true`, `false`, `fn` `(` |
+| primary | each alternative | STRING / IDENT / INT / FLOAT / `(` / `true` / `false` / `fn` |
+| argument | named vs positional | IDENT `=` vs anything else |
 | not | `"not" not` vs comparison | `not` vs first(comparison), which never contains `not` |
 | unary | `"-" unary` vs power | `-` vs first(primary) |
 | primary_type | each alternative | IDENT / `fn` / `(` |
 
-One collision: `assign_stmt` and `expr_stmt` both start with IDENT. Resolution
-(phase 5): when a statement starts with IDENT, look at the second token; if it
-is an `assign_op`, parse `assign_stmt`, otherwise `expr_stmt`. Two tokens of
-lookahead, decided once, in `parse_statement`.
+Three collisions, each resolved with a second token of lookahead, decided
+once. `assign_stmt` and `expr_stmt` both start with IDENT (phase 5): an
+`assign_op` as the second token means `assign_stmt`. `fn_decl` and a lambda
+`expr_stmt` both start with `fn` (phase 7): IDENT as the second token means
+`fn_decl`, `(` means a lambda. A named `argument` and a positional one that
+starts with a name (phase 7): `=` as the second token means named.
 
 **Left recursion.** None. Repetition is written with `{ }`, which becomes a
 loop, never a rule that starts with itself.
@@ -94,6 +120,8 @@ and `2 ** -1` parses. `unary` is above `multiplicative` and below `power`, so
 
 **What ends an expression.** NEWLINE, `)`, `,`, `:`, `else`, EOF. None of
 these can start an expression, so the Pratt loop stops without lookahead.
+`in` never meets the expression parser: the `for` target is a single IDENT
+read by `parse_for` itself.
 `if` after an expression starts the ternary form, which is why `x if c`
 without `else` is an error rather than two statements.
 
@@ -113,14 +141,14 @@ Expressions
 - Pratt parser with the precedence table from SPEC.md section 3.
 - Comparison is non-associative: `a < b < c` is the error `chained comparison is not allowed`.
 - `Ternary = Or [ "if" Or "else" Expr ]`: right-associative; the middle operand cannot be a bare ternary; `x if c` without `else` is an error.
-- `Lambda = "fn" "(" [ params ] ")" [ "->" Type ] "=>" Expr`: the body has the lowest precedence and stops at `, ) ] } NEWLINE ->`. Whether the `-> Type` part exists is decided in phase 7.
+- `Lambda = "fn" "(" [ params ] ")" [ "->" Type ] "=>" Expr`: the body has the lowest precedence and stops at `, ) ] } NEWLINE ->`. Phase 7 kept the optional `-> Type` and decided against block lambdas: a multi-line body is a nested named `fn`.
 - At statement start, `fn` followed by `IDENT` is a declaration; `fn` followed by `(` is an expression.
 - `is` switches to the type parser for its right operand.
 - Assignment is a statement: `AssignStmt = Target ( "=" | "+=" | ... ) Expr NEWLINE`. Inside an argument list, `IDENT "="` (not `==`) is a named argument.
 
 Statements
 
-- `ForStmt = "for" Target "in" Expr ":" Block ; Target = IDENT | "_" | "(" Target { "," Target } ")"`. The target is parsed by this pattern rule, never by the expression parser, so `in` the operator and `in` the separator never meet.
+- `ForStmt = "for" Target "in" Expr ":" Block ; Target = IDENT | "_" | "(" Target { "," Target } ")"`. The target is parsed by this pattern rule, never by the expression parser, so `in` the operator and `in` the separator never meet. Phase 7 implements `IDENT` (which includes `_`); the tuple target waits for destructuring in phase 9.
 - `when` as a value: `LetStmt = ("let" | "var") IDENT [ ":" Type ] "=" ( WhenExpr | Expr NEWLINE )`, same for `ReturnStmt` and `AssignStmt`. A statement whose right-hand side is a `when` ends on `DEDENT`, not `NEWLINE`. A `when` inside brackets or as an operand is an error.
 - `WhenBranch = Pattern "->" Expr NEWLINE` as the placeholder; branch bodies that are statements, and block branches `-> :`, are decided in phase 9.
 - Class header shapes: `ClassDecl = [ "open" | "data" ] "class" IDENT [ TypeParams ] [ "(" Params ")" ] [ ":" Super { "," Super } ] ( ":" Block | NEWLINE )`. After `:`, peek one token: `NEWLINE` means a body follows, anything else means a supertype list. Inside `interface`, a `FnDecl` may end at `NEWLINE` without a body.

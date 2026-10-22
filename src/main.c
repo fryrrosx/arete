@@ -20,11 +20,54 @@
 typedef enum { MODE_RUN, MODE_DUMP_TOKENS, MODE_DUMP_AST } Mode;
 
 /* The state that outlives one source text: in the REPL, names and values
- * must survive from one line to the next. */
+ * must survive from one input to the next. Programs and their source texts
+ * are kept until the session ends, because a function value points at the
+ * tree it was declared in. */
 typedef struct {
     Checker *checker;
     Interp *interp;
+    Program **programs;
+    Source **sources;
+    size_t count;
+    size_t capacity;
 } Session;
+
+static void session_init(Session *s, bool repl_mode) {
+    s->checker = checker_new(repl_mode);
+    s->interp = interp_new();
+    s->programs = NULL;
+    s->sources = NULL;
+    s->count = s->capacity = 0;
+}
+
+/* Takes ownership of `src` (and its text) and, later, of the program it
+ * produces. */
+static void session_keep(Session *s, Source *src, Program *prog) {
+    if (s->count == s->capacity) {
+        s->capacity = s->capacity == 0 ? 16 : s->capacity * 2;
+        s->programs = realloc(s->programs, s->capacity * sizeof(Program *));
+        s->sources = realloc(s->sources, s->capacity * sizeof(Source *));
+        if (s->programs == NULL || s->sources == NULL) {
+            fputs("fatal: out of memory\n", stderr);
+            exit(2);
+        }
+    }
+    s->programs[s->count] = prog;
+    s->sources[s->count] = src;
+    s->count++;
+}
+
+static void session_free(Session *s) {
+    interp_free(s->interp);            /* releases every value first */
+    checker_free(s->checker);
+    for (size_t i = 0; i < s->count; i++) {
+        program_free(s->programs[i]);
+        free((char *)s->sources[i]->text);
+        free(s->sources[i]);
+    }
+    free(s->programs);
+    free(s->sources);
+}
 
 static void print_usage(FILE *out) {
     fprintf(out, "  usage: arete <version>\n");
@@ -34,8 +77,9 @@ static void print_usage(FILE *out) {
     fputc('\n', out);
 }
 
-/* Lexes, parses, checks and runs (or dumps) one source text. */
-static int run_source(Session *s, const Source *src, bool repl_mode, Mode mode) {
+/* Lexes, parses, checks and runs (or dumps) one source text. The session
+ * takes ownership of `src`. */
+static int run_source(Session *s, Source *src, bool repl_mode, Mode mode) {
     Diag err = {0};
     TokenList tokens = {0};
     Program *prog = NULL;
@@ -47,7 +91,7 @@ static int run_source(Session *s, const Source *src, bool repl_mode, Mode mode) 
         code = 0;
         goto done;
     }
-    prog = parse_program(&tokens, repl_mode, &err);
+    prog = parse_program(&tokens, repl_mode, src, &err);
     if (prog == NULL) goto done;
     if (mode == MODE_DUMP_AST) {
         dump_program(prog, stdout);
@@ -55,12 +99,24 @@ static int run_source(Session *s, const Source *src, bool repl_mode, Mode mode) 
     } else if (check_program(s->checker, prog, &err)) {
         code = interp_run(s->interp, prog, &err);
     }
-    program_free(prog);
 
 done:
     if (err.is_set) diag_print(src, &err);
     token_list_free(&tokens);
+    session_keep(s, src, prog);
     return code;
+}
+
+static Source *source_new(const char *file, char *text, size_t length) {
+    Source *src = malloc(sizeof *src);
+    if (src == NULL) {
+        fputs("fatal: out of memory\n", stderr);
+        exit(2);
+    }
+    src->file = file;
+    src->text = text;
+    src->length = length;
+    return src;
 }
 
 static int cmd_run(const char *path, Mode mode) {
@@ -70,17 +126,10 @@ static int cmd_run(const char *path, Mode mode) {
         fprintf(stderr, "error: cannot open file `%s`\n", path);
         return 1;
     }
-    Source src;
-    src.file = path;
-    src.text = text;
-    src.length = length;
     Session s;
-    s.checker = checker_new(false);
-    s.interp = interp_new();
-    int code = run_source(&s, &src, false, mode);
-    interp_free(s.interp);
-    checker_free(s.checker);
-    free(text);
+    session_init(&s, false);
+    int code = run_source(&s, source_new(path, text, length), false, mode);
+    session_free(&s);
     return code;
 }
 
@@ -151,8 +200,7 @@ static int cmd_repl(const char *version) {
     bool interactive = rt_stdin_is_terminal();
     int status = 0;
     Session s;
-    s.checker = checker_new(true);
-    s.interp = interp_new();
+    session_init(&s, true);
     if (interactive) {
         printf("Arete %s REPL\n", version);
         rt_history_load();
@@ -160,16 +208,11 @@ static int cmd_repl(const char *version) {
     for (;;) {
         char *input = read_input(interactive);
         if (input == NULL) break;
-        Source src;
-        src.file = "<repl>";
-        src.text = input;
-        src.length = strlen(input);
-        if (run_source(&s, &src, true, MODE_RUN) != 0) status = 1;
-        free(input);
+        Source *src = source_new("<repl>", input, strlen(input));
+        if (run_source(&s, src, true, MODE_RUN) != 0) status = 1;
     }
     if (interactive) rt_history_save();
-    interp_free(s.interp);
-    checker_free(s.checker);
+    session_free(&s);
     return status;
 }
 

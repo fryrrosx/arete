@@ -1,0 +1,9 @@
+arete 0.1
+for n in 0..=3:
+    if n == 1:
+        continue
+    print(n)
+while false:
+    break
+fn f():
+    return

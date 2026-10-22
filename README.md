@@ -24,9 +24,11 @@ Three ideas drive the design:
 
 ## Status
 
-Pre-0.1, phases 0–6 and 8 of `ROADMAP.md`: numbers, strings, `let`/`var`,
-`if/elif/else`, and a REPL with multi-line input and history; no loops or
-functions yet (phase 7 is next). `SPEC.md` holds every decision made,
+Pre-0.1, phases 0–8 of `ROADMAP.md`: numbers, strings, `let`/`var`,
+`if/elif/else`, `while`/`for` over ranges, functions with defaults and named
+arguments, lambdas and closures, and a REPL with multi-line input and
+history. No collections, strings methods or classes yet (stage C starts
+with the phase 9 decisions). `SPEC.md` holds every decision made,
 `examples/pending/` the programs the language must eventually run.
 
 ## Building

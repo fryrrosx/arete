@@ -1,5 +1,7 @@
-/* env.h - variables at run time: a scope with a parent, each name bound to
- * a value and a mutability flag. Lookups walk outwards through parents. */
+/* env.h - scopes at run time. The resolver (check.c) numbers every local
+ * name as (hops, slot): walk `hops` parents outwards, take slot `slot`.
+ * The global scope keeps names, because the REPL adds to it line by line
+ * and a program's top-level functions must see names declared later. */
 #ifndef ARETE_ENV_H
 #define ARETE_ENV_H
 
@@ -8,27 +10,23 @@
 
 #include "arete_rt.h"
 
-typedef struct {
-    char *name;      /* owned */
-    Value value;     /* one reference owned by the scope */
-    bool is_mutable;
-} Binding;
+/* A new scope with `slot_count` empty slots; holds one reference to
+ * `parent`. The caller owns the returned reference. */
+ObjEnv *env_new(ObjEnv *parent, int slot_count);
 
-typedef struct Env {
-    struct Env *parent;
-    Binding *items;
-    size_t count;
-    size_t capacity;
-} Env;
+void env_retain(ObjEnv *env);
+void env_release(ObjEnv *env);
 
-Env *env_new(Env *parent);
-void env_free(Env *env);
+/* Frees the scope's contents and the scope. Called by value_release at
+ * refcount zero and by rt_shutdown; not for direct use. */
+void env_destroy(ObjEnv *env);
 
-/* Binds `name` in this scope, taking over one reference to `value`.
- * A name already bound in this same scope is rebound (the REPL needs this). */
-void env_define(Env *env, const char *name, Value value, bool is_mutable);
+/* The slot `hops` scopes outwards. */
+Value *env_slot(ObjEnv *env, int hops, int slot);
 
-/* Finds the binding in this scope or an enclosing one. NULL if unbound. */
-Binding *env_lookup(Env *env, const char *name);
+/* Global scope by name. Defining a name already present rebinds it (the
+ * REPL needs this). Lookup returns NULL when the name is unbound. */
+void env_define_global(ObjEnv *global, const char *name, Value value, bool is_mutable);
+Binding *env_find_global(ObjEnv *global, const char *name);
 
 #endif

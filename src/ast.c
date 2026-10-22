@@ -50,9 +50,13 @@ void expr_free(Expr *e) {
         free(e->as.name.name);
         break;
     case EXPR_CALL:
-        free(e->as.call.name);
-        for (size_t i = 0; i < e->as.call.arg_count; i++) expr_free(e->as.call.args[i]);
+        expr_free(e->as.call.callee);
+        for (size_t i = 0; i < e->as.call.arg_count; i++) {
+            expr_free(e->as.call.args[i]);
+            free(e->as.call.names[i]);
+        }
         free(e->as.call.args);
+        free(e->as.call.names);
         break;
     case EXPR_UNARY:
         expr_free(e->as.unary.operand);
@@ -70,8 +74,44 @@ void expr_free(Expr *e) {
         expr_free(e->as.ternary.then);
         expr_free(e->as.ternary.otherwise);
         break;
+    case EXPR_RANGE:
+        expr_free(e->as.range.start);
+        expr_free(e->as.range.end);
+        break;
+    case EXPR_LAMBDA:
+        fn_proto_free(e->as.lambda.proto);
+        break;
     }
     free(e);
+}
+
+/* ---- functions -------------------------------------------------------- */
+
+FnProto *fn_proto_new(int line, int column) {
+    FnProto *f = xcalloc(sizeof *f);
+    f->line = line;
+    f->column = column;
+    return f;
+}
+
+void fn_proto_add_param(FnProto *f, Param p) {
+    f->params = xrealloc(f->params, (f->param_count + 1) * sizeof(Param));
+    f->params[f->param_count++] = p;
+}
+
+void fn_proto_free(FnProto *f) {
+    if (f == NULL) return;
+    free(f->name);
+    for (size_t i = 0; i < f->param_count; i++) {
+        free(f->params[i].name);
+        type_free(f->params[i].type);
+        expr_free(f->params[i].default_value);
+    }
+    free(f->params);
+    type_free(f->result);
+    stmt_list_free(f->body);
+    expr_free(f->expr_body);
+    free(f);
 }
 
 /* ---- statements ------------------------------------------------------- */
@@ -108,6 +148,24 @@ void stmt_free(Stmt *s) {
         free(s->as.if_.blocks);
         stmt_list_free(s->as.if_.otherwise);
         break;
+    case STMT_WHILE:
+        expr_free(s->as.while_.cond);
+        stmt_list_free(s->as.while_.body);
+        break;
+    case STMT_FOR:
+        free(s->as.for_.name);
+        expr_free(s->as.for_.iterable);
+        stmt_list_free(s->as.for_.body);
+        break;
+    case STMT_BREAK:
+    case STMT_CONTINUE:
+        break;
+    case STMT_RETURN:
+        expr_free(s->as.return_.value);
+        break;
+    case STMT_FN:
+        fn_proto_free(s->as.fn.proto);
+        break;
     }
     free(s);
 }
@@ -115,6 +173,7 @@ void stmt_free(Stmt *s) {
 void stmt_list_init(StmtList *list) {
     list->items = NULL;
     list->count = list->capacity = 0;
+    list->slot_count = 0;
 }
 
 void stmt_list_add(StmtList *list, Stmt *s) {
@@ -178,6 +237,8 @@ const char *op_symbol(TokenKind op) {
     case TOK_AND: return "and";
     case TOK_OR: return "or";
     case TOK_NOT: return "not";
+    case TOK_DOT_DOT: return "..";
+    case TOK_DOT_DOT_EQUAL: return "..=";
     default: return "?";
     }
 }

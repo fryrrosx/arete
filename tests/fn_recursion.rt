@@ -1,0 +1,11 @@
+arete 0.1
+fn fib(n: int) -> int:
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+fn count(n: int) -> int:
+    if n == 0:
+        return 0
+    return 1 + count(n - 1)
+print(fib(20))
+print(count(900))

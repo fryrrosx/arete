@@ -9,9 +9,12 @@
 #include "diag.h"
 #include "token.h"
 
-/* Builds the tree for a whole file (or, with `repl_mode`, for one REPL line
- * without a header). Returns NULL and fills `err` on the first syntax error.
- * The token list may be edited (a `>=` split into `>` `=` inside a type). */
-Program *parse_program(TokenList *tokens, bool repl_mode, Diag *err);
+/* Builds the tree for a whole file (or, with `repl_mode`, for one REPL
+ * input without a header). Returns NULL and fills `err` on the first
+ * syntax error. The token list may be edited (a `>=` split into `>` `=`
+ * inside a type). `src` is remembered by every function the program
+ * declares, so a runtime error inside it can show the right source line;
+ * the caller keeps `src` alive as long as the program. */
+Program *parse_program(TokenList *tokens, bool repl_mode, const Source *src, Diag *err);
 
 #endif

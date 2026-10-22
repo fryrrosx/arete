@@ -1,0 +1,7 @@
+arete 0.1
+var total = 0
+for n in 0..100:
+    if n == 5:
+        break
+    total += n
+print(total)

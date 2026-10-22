@@ -14,6 +14,7 @@
 #define ARETE_FILENO(f) _fileno(f)
 #else
 #include <errno.h>
+#include <sys/resource.h>
 #include <unistd.h>
 #include "linenoise.h"
 #define ARETE_ISATTY(fd) isatty(fd)
@@ -22,6 +23,13 @@
 
 #define HISTORY_FILE ".arete_history"
 #define HISTORY_LINES 1000
+
+/* The interpreter counts on 8 MB of stack for its depth limits (interp.c).
+ * Linux and macOS give the main thread that much; MSVC defaults to 1 MB,
+ * so the linker is told here, where the platform-specific code lives. */
+#if defined(_MSC_VER)
+#pragma comment(linker, "/STACK:8388608")
+#endif
 
 void rt_sys_init(void) {
 #if defined(_WIN32)
@@ -154,4 +162,18 @@ void rt_history_save(void) {
 
 bool rt_stdin_is_terminal(void) {
     return ARETE_ISATTY(ARETE_FILENO(stdin)) != 0;
+}
+
+#define DEFAULT_STACK (8u * 1024u * 1024u)
+
+size_t rt_stack_limit(void) {
+#if defined(_WIN32)
+    return DEFAULT_STACK;                      /* the /STACK pragma above */
+#else
+    struct rlimit rl;
+    if (getrlimit(RLIMIT_STACK, &rl) != 0) return DEFAULT_STACK;
+    if (rl.rlim_cur == RLIM_INFINITY) return DEFAULT_STACK;
+    if (rl.rlim_cur > (rlim_t)1 << 30) return (size_t)1 << 30;
+    return (size_t)rl.rlim_cur;
+#endif
 }

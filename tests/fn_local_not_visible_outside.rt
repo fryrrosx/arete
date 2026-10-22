@@ -1,0 +1,4 @@
+arete 0.1
+fn outer():
+    let x = 10
+print(x)

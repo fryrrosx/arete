@@ -1,0 +1,5 @@
+arete 0.1
+fn f(a: int) -> int:
+    return a
+let g = f
+print(g(c = 1))

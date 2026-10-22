@@ -1,0 +1,5 @@
+arete 0.1
+fn h(x: int) -> int:
+    if x > 0:
+        return x
+print(h(-1))

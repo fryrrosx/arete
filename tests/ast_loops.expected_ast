@@ -1,0 +1,3 @@
+(for n (..= 0 3) (block (if (== n 1) (block (continue))) (print n)))
+(while false (block (break)))
+(fn f () (block (return)))

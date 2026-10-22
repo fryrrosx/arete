@@ -6,10 +6,10 @@ while i < 3:
     print(i)
     i += 1
 
-for n in 0..3:          # OPEN(7): range spelling. 0..3 is 0, 1, 2
+for n in 0..3:          # 0..3 is 0, 1, 2 (the end is excluded)
     print(n * 10)
 
-for n in 1..=3:         # inclusive end
+for n in 1..=3:         # ..= includes the end
     if n == 2:
         continue
     print(n)

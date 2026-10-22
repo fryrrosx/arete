@@ -1,0 +1,4 @@
+arete 0.1
+fn f():
+    print(1)
+f = 2

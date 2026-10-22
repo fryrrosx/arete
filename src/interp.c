@@ -1,3 +1,9 @@
+/* interp.c - tree-walking interpreter. Values are counted (arete_rt.h);
+ * every `eval` hands the caller one reference, which the caller releases.
+ * Scopes are ObjEnv chains: the resolver (check.c) numbered local names as
+ * (hops, slot), only the global scope is searched by name. Statements
+ * return a Flow so that `break`, `continue` and `return` unwind the walk
+ * without C longjmp. */
 #include "interp.h"
 
 #include <inttypes.h>
@@ -8,55 +14,120 @@
 
 #include "arete_rt.h"
 #include "env.h"
+#include "rt_sys.h"
 #include "util.h"
 
+/* Nested calls allowed before `too many nested calls` (SPEC.md section 2.5). */
+#define MAX_CALL_DEPTH 1000
+
+/* The walk stops with `stack overflow` instead of crashing when it has
+ * used all but this much of the stack rt_sys reports (8 MB on every
+ * platform the project builds on; rt_sys.c sets that for MSVC). */
+#define STACK_MARGIN (1u * 1024u * 1024u)
+
+enum { NATIVE_NONE = 0, NATIVE_PRINT = 1 };
+
+typedef enum { FLOW_NORMAL, FLOW_BREAK, FLOW_CONTINUE, FLOW_RETURN, FLOW_ERROR } Flow;
+
 struct Interp {
-    Env *globals;
-    Env *env;        /* innermost scope while running */
-    Diag *err;       /* where a runtime error is recorded */
+    ObjEnv *globals;
+    ObjEnv *env;             /* innermost scope while running */
+    Diag *err;               /* where a runtime error is recorded */
+    const Source *source;    /* the source of the code running now; NULL for the program's own */
+    int depth;               /* nested calls */
+    Value return_value;      /* set by `return`, taken by the call */
+    const char *stack_base;  /* address of a local in interp_run, for the stack guard */
+    size_t stack_budget;     /* bytes the walk may use below stack_base */
 };
 
 Interp *interp_new(void) {
     Interp *in = xcalloc(sizeof *in);
-    in->globals = env_new(NULL);
+    size_t limit = rt_stack_limit();
+    in->stack_budget = limit > 2 * STACK_MARGIN ? limit - STACK_MARGIN : limit / 2;
+    in->globals = env_new(NULL, 0);
     in->env = in->globals;
+    in->return_value = value_null();
+    env_define_global(in->globals, "print", value_function("print", NULL, NULL, NATIVE_PRINT), false);
     return in;
 }
 
 void interp_free(Interp *in) {
     if (in == NULL) return;
-    env_free(in->globals);
+    value_release(in->return_value);
+    env_release(in->globals);
+    rt_shutdown();           /* what closures kept alive in cycles */
     free(in);
 }
 
 /* ---- runtime errors --------------------------------------------------- */
 
-static bool fail(Interp *in, const Expr *at, const char *summary,
-                 const char *label, const char *help) {
-    diag_set(in->err, at->line, at->column, summary, label, help);
+static bool fail_at(Interp *in, int line, int column, const char *summary,
+                    const char *label, const char *help) {
+    diag_set(in->err, line, column, summary, label, help);
+    in->err->source = in->source;
     return false;
 }
 
-static const char *kind_name(Value v) {
-    switch (v.kind) {
-    case VAL_NULL: return "null";
-    case VAL_BOOL: return "bool";
-    case VAL_INT: return "int";
-    case VAL_FLOAT: return "float";
-    case VAL_OBJ: return "string";
-    }
-    return "?";
+static bool fail(Interp *in, const Expr *at, const char *summary,
+                 const char *label, const char *help) {
+    return fail_at(in, at->line, at->column, summary, label, help);
 }
 
 static bool fail_operands(Interp *in, const Expr *at, TokenKind op, Value a, Value b) {
     char summary[160];
     snprintf(summary, sizeof summary, "cannot apply `%s` to %s and %s",
-             op_symbol(op), kind_name(a), kind_name(b));
+             op_symbol(op), value_type_name(a), value_type_name(b));
     const char *help = NULL;
-    if ((a.kind == VAL_OBJ) != (b.kind == VAL_OBJ) && op == TOK_PLUS) {
+    bool a_str = value_is(a, OBJ_STRING), b_str = value_is(b, OBJ_STRING);
+    if (a_str != b_str && op == TOK_PLUS) {
         help = "both sides of `+` must be strings or both numbers";
     }
     return fail(in, at, summary, "here", help);
+}
+
+/* The C stack is finite; the call-depth and expression-depth limits keep
+ * normal programs far from it, this guard turns the rest into an error.
+ * A distance far beyond any stack means the locals are not on it (a
+ * sanitizer's fake stack); then there is nothing to measure. */
+static bool stack_ok(Interp *in, const Expr *at) {
+    char here;
+    size_t used = (size_t)(in->stack_base > &here ? in->stack_base - &here : &here - in->stack_base);
+    if (used < in->stack_budget || used > 64 * in->stack_budget) return true;
+    return fail(in, at, "stack overflow", "the program is nested too deeply here",
+                "reduce the nesting of calls and expressions");
+}
+
+/* Message helpers kept out of the hot functions, so that their buffers do
+ * not sit in every frame of the recursive walk. */
+static bool fail_no_value(Interp *in, const Expr *e) {
+    char summary[160];
+    snprintf(summary, sizeof summary, "`%s` has no value", e->as.name.name);
+    return fail(in, e, summary, "its declaration failed earlier", NULL);
+}
+
+static bool fail_not_callable(Interp *in, const Expr *e, Value callee) {
+    char summary[160], label[120];
+    if (e->as.call.callee->kind == EXPR_NAME) {
+        snprintf(summary, sizeof summary, "`%s` is not a function", e->as.call.callee->as.name.name);
+        snprintf(label, sizeof label, "it holds %s", value_type_name(callee));
+    } else {
+        snprintf(summary, sizeof summary, "cannot call %s", value_type_name(callee));
+        snprintf(label, sizeof label, "this is %s, not a function", value_type_name(callee));
+    }
+    return fail(in, e, summary, label, NULL);
+}
+
+static bool fail_too_deep(Interp *in, const Expr *call) {
+    char label[80];
+    snprintf(label, sizeof label, "this would be call number %d, one inside the other", MAX_CALL_DEPTH + 1);
+    return fail(in, call, "too many nested calls", label,
+                "the limit is 1000 nested calls; does the recursion reach its base case?");
+}
+
+static bool fail_no_return(Interp *in, const Expr *call, const FnProto *proto) {
+    char summary[160];
+    snprintf(summary, sizeof summary, "`%s` ended without returning a value", proto->name);
+    return fail(in, call, summary, "called here", "every path through the function must `return` a value");
 }
 
 /* ---- arithmetic ------------------------------------------------------- */
@@ -125,7 +196,7 @@ static bool pow_checked(int64_t base, int64_t exp, int64_t *out) {
 }
 
 static bool arith(Interp *in, const Expr *at, TokenKind op, Value a, Value b, Value *out) {
-    if (op == TOK_PLUS && a.kind == VAL_OBJ && b.kind == VAL_OBJ) {
+    if (op == TOK_PLUS && value_is(a, OBJ_STRING) && value_is(b, OBJ_STRING)) {
         *out = value_string_concat(a, b);
         return true;
     }
@@ -230,10 +301,20 @@ static bool values_equal(Value a, Value b) {
     switch (a.kind) {
     case VAL_NULL: return true;
     case VAL_BOOL: return a.as.boolean == b.as.boolean;
-    case VAL_OBJ: {
-        ObjString *x = (ObjString *)a.as.obj, *y = (ObjString *)b.as.obj;
-        return x->length == y->length && memcmp(x->chars, y->chars, x->length) == 0;
-    }
+    case VAL_OBJ:
+        if (a.as.obj->kind != b.as.obj->kind) return false;
+        switch (a.as.obj->kind) {
+        case OBJ_STRING: {
+            ObjString *x = (ObjString *)a.as.obj, *y = (ObjString *)b.as.obj;
+            return x->length == y->length && memcmp(x->chars, y->chars, x->length) == 0;
+        }
+        case OBJ_RANGE: {
+            ObjRange *x = (ObjRange *)a.as.obj, *y = (ObjRange *)b.as.obj;
+            return x->start == y->start && x->end == y->end && x->inclusive == y->inclusive;
+        }
+        default:
+            return a.as.obj == b.as.obj;         /* functions: the same function */
+        }
     default: return false;
     }
 }
@@ -245,7 +326,7 @@ static bool order(Value a, Value b, int *cmp) {
         *cmp = 2;                                  /* NaN: every ordering is false */
         return true;
     }
-    if (a.kind == VAL_OBJ && b.kind == VAL_OBJ) {
+    if (value_is(a, OBJ_STRING) && value_is(b, OBJ_STRING)) {
         ObjString *x = (ObjString *)a.as.obj, *y = (ObjString *)b.as.obj;
         size_t n = x->length < y->length ? x->length : y->length;
         int c = memcmp(x->chars, y->chars, n);
@@ -276,11 +357,12 @@ static bool compare(Interp *in, const Expr *at, TokenKind op, Value a, Value b, 
 /* ---- evaluation ------------------------------------------------------- */
 
 static bool eval(Interp *in, const Expr *e, Value *out);
+static Flow exec_list(Interp *in, const StmtList *list, ObjEnv *env);
 
 static bool need_bool(Interp *in, const Expr *at, Value v, const char *what) {
     if (v.kind == VAL_BOOL) return true;
     char summary[120], help[120];
-    snprintf(summary, sizeof summary, "%s must be bool, found %s", what, kind_name(v));
+    snprintf(summary, sizeof summary, "%s must be bool, found %s", what, value_type_name(v));
     snprintf(help, sizeof help, "compare explicitly, for example `x != 0`");
     value_release(v);
     return fail(in, at, summary, "here", help);
@@ -346,20 +428,169 @@ static bool eval_unary(Interp *in, const Expr *e, Value *out) {
         return true;
     }
     char summary[120];
-    snprintf(summary, sizeof summary, "cannot negate %s", kind_name(v));
+    snprintf(summary, sizeof summary, "cannot negate %s", value_type_name(v));
     value_release(v);
     return fail(in, e, summary, "here", NULL);
 }
 
-/* The only built-in so far. Prints one value and a newline. */
-static bool call_print(Interp *in, const Expr *call, Value *out) {
-    Value v;
-    if (!eval(in, call->as.call.args[0], &v)) return false;
-    value_print(v, stdout);
+static bool eval_range(Interp *in, const Expr *e, Value *out) {
+    Value a, b;
+    if (!eval(in, e->as.range.start, &a)) return false;
+    if (!eval(in, e->as.range.end, &b)) {
+        value_release(a);
+        return false;
+    }
+    bool ok = true;
+    if (a.kind != VAL_INT || b.kind != VAL_INT) {
+        char summary[160];
+        const Expr *bad = a.kind != VAL_INT ? e->as.range.start : e->as.range.end;
+        snprintf(summary, sizeof summary, "range ends must be int, found %s",
+                 value_type_name(a.kind != VAL_INT ? a : b));
+        ok = fail(in, bad, summary, "this end", "a range is `start..end` over integers");
+    } else {
+        *out = value_range(a.as.integer, b.as.integer, e->as.range.inclusive);
+    }
+    value_release(a);
+    value_release(b);
+    return ok;
+}
+
+/* ---- calls ------------------------------------------------------------ */
+
+static bool call_print(Interp *in, const Expr *call, Value *args, size_t count) {
+    if (count != 1 || call->as.call.names[0] != NULL) {
+        char label[80];
+        snprintf(label, sizeof label, "called with %zu argument%s", count, count == 1 ? "" : "s");
+        return fail(in, call, "print takes exactly one argument", label, "write print(x)");
+    }
+    value_print(args[0], stdout);
     fputc('\n', stdout);
-    value_release(v);
-    *out = value_null();
     return true;
+}
+
+/* Binds the arguments of `call` to the parameters of `f` in `env`: the
+ * same rules as check_arguments in check.c, applied here because the
+ * callee may be a function value the checker could not see. Errors point
+ * into the caller's source. */
+static bool bind_arguments(Interp *in, const Expr *call, const FnProto *f, Value *args, ObjEnv *env) {
+    const char *name = f->name != NULL ? f->name : "the lambda";
+    size_t positional = 0;
+    for (size_t i = 0; i < call->as.call.arg_count; i++) {
+        const Expr *arg = call->as.call.args[i];
+        const char *arg_name = call->as.call.names[i];
+        size_t index;
+        if (arg_name == NULL) {
+            if (positional >= f->param_count) {
+                char summary[160], label[120];
+                snprintf(summary, sizeof summary, "too many arguments to `%s`", name);
+                snprintf(label, sizeof label, "it takes %zu, this is number %zu",
+                         f->param_count, positional + 1);
+                return fail(in, arg, summary, label, NULL);
+            }
+            index = positional++;
+        } else {
+            index = f->param_count;
+            for (size_t k = 0; k < f->param_count; k++) {
+                if (strcmp(f->params[k].name, arg_name) == 0) { index = k; break; }
+            }
+            if (index == f->param_count) {
+                char summary[160], help[200];
+                snprintf(summary, sizeof summary, "`%s` has no parameter `%s`", name, arg_name);
+                size_t n = snprintf(help, sizeof help, "its parameters are:");
+                for (size_t k = 0; k < f->param_count && n < sizeof help; k++) {
+                    n += snprintf(help + n, sizeof help - n, "%s `%s`", k > 0 ? "," : "", f->params[k].name);
+                }
+                if (f->param_count == 0) snprintf(help, sizeof help, "it takes no arguments");
+                return fail(in, arg, summary, "named argument here", help);
+            }
+            if (env->slots[index].kind != VAL_NULL) {
+                char summary[160];
+                snprintf(summary, sizeof summary, "argument `%s` is given twice", arg_name);
+                return fail(in, arg, summary, "second time here", "it was already passed by position");
+            }
+        }
+        value_retain(args[i]);
+        env->slots[index] = args[i];
+    }
+    for (size_t k = 0; k < f->param_count; k++) {
+        if (env->slots[k].kind == VAL_NULL && f->params[k].default_value == NULL) {
+            char summary[160], help[160];
+            snprintf(summary, sizeof summary, "missing argument `%s` in call to `%s`",
+                     f->params[k].name, name);
+            snprintf(help, sizeof help, "pass it by position or by name: %s = ...", f->params[k].name);
+            return fail(in, call, summary, "call here", help);
+        }
+    }
+    return true;
+}
+
+/* A `null` in a parameter slot after binding means "take the default":
+ * values are never null in phase 7. */
+static bool call_function(Interp *in, const Expr *call, ObjFunction *f, Value *args, size_t count, Value *out) {
+    if (f->native == NATIVE_PRINT) {
+        if (!call_print(in, call, args, count)) return false;
+        *out = value_null();
+        return true;
+    }
+    if (in->depth >= MAX_CALL_DEPTH) return fail_too_deep(in, call);
+    const FnProto *proto = f->proto;
+    ObjEnv *env = env_new(f->closure, proto->slot_count);
+    if (!bind_arguments(in, call, proto, args, env)) {
+        env_release(env);
+        return false;
+    }
+
+    ObjEnv *caller_env = in->env;
+    const Source *caller_source = in->source;
+    in->env = env;
+    in->source = proto->source;
+    in->depth++;
+    bool ok = true;
+    for (size_t k = 0; ok && k < proto->param_count; k++) {
+        if (env->slots[k].kind == VAL_NULL) ok = eval(in, proto->params[k].default_value, &env->slots[k]);
+    }
+    if (ok && proto->expr_body != NULL) {
+        ok = eval(in, proto->expr_body, out);
+    } else if (ok) {
+        Flow flow = exec_list(in, proto->body, env);
+        if (flow == FLOW_ERROR) {
+            ok = false;
+        } else if (flow == FLOW_RETURN) {
+            *out = in->return_value;
+            in->return_value = value_null();
+        } else if (proto->result != NULL) {
+            in->source = caller_source;
+            ok = fail_no_return(in, call, proto);
+        } else {
+            *out = value_null();
+        }
+    }
+    in->depth--;
+    in->env = caller_env;
+    in->source = caller_source;
+    env_release(env);
+    return ok;
+}
+
+static bool eval_call(Interp *in, const Expr *e, Value *out) {
+    if (!stack_ok(in, e)) return false;
+    Value callee;
+    if (!eval(in, e->as.call.callee, &callee)) return false;
+    if (!value_is(callee, OBJ_FUNCTION)) {
+        fail_not_callable(in, e, callee);
+        value_release(callee);
+        return false;
+    }
+    size_t count = e->as.call.arg_count;
+    Value *args = count > 0 ? xmalloc(count * sizeof(Value)) : NULL;
+    size_t done = 0;
+    bool ok = true;
+    for (; ok && done < count; done++) ok = eval(in, e->as.call.args[done], &args[done]);
+    if (ok) ok = call_function(in, e, (ObjFunction *)callee.as.obj, args, count, out);
+    for (size_t i = 0; i < done; i++) value_release(args[i]);
+    free(args);
+    value_release(callee);
+    return ok;
 }
 
 /* Evaluates an expression into a value the caller owns (must release). */
@@ -370,17 +601,19 @@ static bool eval(Interp *in, const Expr *e, Value *out) {
     case EXPR_BOOL:   *out = value_bool(e->as.boolean); return true;
     case EXPR_STRING: *out = value_string(e->as.string.chars, e->as.string.length); return true;
     case EXPR_NAME: {
-        Binding *b = env_lookup(in->env, e->as.name.name);
-        if (b == NULL) {
-            char summary[160];
-            snprintf(summary, sizeof summary, "`%s` has no value", e->as.name.name);
-            return fail(in, e, summary, "its declaration failed earlier", NULL);
+        Value *slot;
+        if (e->as.name.hops == SCOPE_GLOBAL) {
+            Binding *b = env_find_global(in->globals, e->as.name.name);
+            if (b == NULL) return fail_no_value(in, e);
+            slot = &b->value;
+        } else {
+            slot = env_slot(in->env, e->as.name.hops, e->as.name.slot);
         }
-        value_retain(b->value);
-        *out = b->value;
+        value_retain(*slot);
+        *out = *slot;
         return true;
     }
-    case EXPR_CALL:    return call_print(in, e, out);   /* check.c guarantees it is print */
+    case EXPR_CALL:    return eval_call(in, e, out);
     case EXPR_UNARY:   return eval_unary(in, e, out);
     case EXPR_BINARY:  return eval_binary(in, e, out);
     case EXPR_LOGICAL: return eval_logical(in, e, out);
@@ -390,14 +623,17 @@ static bool eval(Interp *in, const Expr *e, Value *out) {
         if (!need_bool(in, e->as.ternary.cond, c, "the condition of `if`")) return false;
         return eval(in, c.as.boolean ? e->as.ternary.then : e->as.ternary.otherwise, out);
     }
+    case EXPR_RANGE:   return eval_range(in, e, out);
+    case EXPR_LAMBDA:
+        env_retain(in->env);
+        *out = value_function("lambda", e->as.lambda.proto, in->env, NATIVE_NONE);
+        return true;
     }
     *out = value_null();
     return true;
 }
 
 /* ---- statements ------------------------------------------------------- */
-
-static bool exec_block(Interp *in, const StmtList *block);
 
 static TokenKind base_op(TokenKind compound) {
     switch (compound) {
@@ -410,78 +646,181 @@ static TokenKind base_op(TokenKind compound) {
     }
 }
 
-static bool exec_stmt(Interp *in, const Stmt *s) {
+/* Stores a value where the resolver said the name lives. */
+static void store(Interp *in, int hops, int slot, const char *name, Value v, bool is_mutable) {
+    if (hops == SCOPE_GLOBAL) {
+        env_define_global(in->globals, name, v, is_mutable);
+        return;
+    }
+    Value *target = env_slot(in->env, hops, slot);
+    value_release(*target);
+    *target = v;
+}
+
+/* Creates the function values a statement list declares, before the list
+ * runs: functions are visible in their whole scope (phase 7 decision). */
+static void define_functions(Interp *in, const StmtList *list, ObjEnv *env) {
+    for (size_t i = 0; i < list->count; i++) {
+        const Stmt *s = list->items[i];
+        if (s->kind != STMT_FN) continue;
+        const FnProto *f = s->as.fn.proto;
+        env_retain(env);
+        Value fv = value_function(f->name, f, env, NATIVE_NONE);
+        store(in, s->as.fn.slot == SCOPE_GLOBAL ? SCOPE_GLOBAL : 0, s->as.fn.slot, f->name, fv, false);
+    }
+}
+
+/* A block is a scope: its variables are released when it ends. */
+static Flow exec_block(Interp *in, const StmtList *block) {
+    ObjEnv *outer = in->env;
+    ObjEnv *inner = env_new(outer, block->slot_count);
+    Flow flow = exec_list(in, block, inner);
+    in->env = outer;
+    env_release(inner);
+    return flow;
+}
+
+static Flow exec_for(Interp *in, const Stmt *s) {
+    Value iterable;
+    if (!eval(in, s->as.for_.iterable, &iterable)) return FLOW_ERROR;
+    if (!value_is(iterable, OBJ_RANGE)) {
+        char summary[120];
+        snprintf(summary, sizeof summary, "cannot iterate over %s", value_type_name(iterable));
+        value_release(iterable);
+        fail(in, s->as.for_.iterable, summary, "`for` needs a range here", "write a range: `for i in 0..10:`");
+        return FLOW_ERROR;
+    }
+    ObjRange *range = (ObjRange *)iterable.as.obj;
+    ObjEnv *outer = in->env;
+    Flow flow = FLOW_NORMAL;
+    int64_t i = range->start;
+    bool more = range->inclusive ? i <= range->end : i < range->end;
+    while (more) {
+        ObjEnv *iteration = env_new(outer, s->as.for_.body->slot_count);
+        iteration->slots[0] = value_int(i);
+        flow = exec_list(in, s->as.for_.body, iteration);
+        in->env = outer;
+        env_release(iteration);
+        if (flow == FLOW_BREAK) { flow = FLOW_NORMAL; break; }
+        if (flow == FLOW_CONTINUE) flow = FLOW_NORMAL;
+        if (flow != FLOW_NORMAL) break;
+        if (i == range->end) break;           /* inclusive: the end was the last value */
+        i++;
+        more = range->inclusive ? i <= range->end : i < range->end;
+    }
+    value_release(iterable);
+    return flow;
+}
+
+static Flow exec_stmt(Interp *in, const Stmt *s) {
     switch (s->kind) {
     case STMT_EXPR: {
         Value v;
-        if (!eval(in, s->as.expr, &v)) return false;
+        if (!eval(in, s->as.expr, &v)) return FLOW_ERROR;
         value_release(v);
-        return true;
+        return FLOW_NORMAL;
     }
     case STMT_LET: {
         Value v;
-        if (!eval(in, s->as.let.value, &v)) return false;
+        if (!eval(in, s->as.let.value, &v)) return FLOW_ERROR;
         if (strcmp(s->as.let.name, "_") == 0) {
             value_release(v);                      /* `_` discards the value */
-            return true;
+            return FLOW_NORMAL;
         }
-        env_define(in->env, s->as.let.name, v, s->as.let.is_mutable);
-        return true;
+        store(in, s->as.let.slot == SCOPE_GLOBAL ? SCOPE_GLOBAL : 0, s->as.let.slot,
+              s->as.let.name, v, s->as.let.is_mutable);
+        return FLOW_NORMAL;
     }
     case STMT_ASSIGN: {
         Value v;
-        if (!eval(in, s->as.assign.value, &v)) return false;
-        Binding *b = env_lookup(in->env, s->as.assign.name);   /* check.c: exists, mutable */
-        if (b == NULL) {
-            value_release(v);
-            diag_set(in->err, s->line, s->column, "assignment to a name without a value",
-                     "its declaration failed earlier", NULL);
-            return false;
+        if (!eval(in, s->as.assign.value, &v)) return FLOW_ERROR;
+        Value *target;
+        if (s->as.assign.hops == SCOPE_GLOBAL) {
+            Binding *b = env_find_global(in->globals, s->as.assign.name);
+            if (b == NULL) {
+                value_release(v);
+                fail_at(in, s->line, s->column, "assignment to a name without a value",
+                        "its declaration failed earlier", NULL);
+                return FLOW_ERROR;
+            }
+            target = &b->value;
+        } else {
+            target = env_slot(in->env, s->as.assign.hops, s->as.assign.slot);
         }
         if (s->as.assign.op != TOK_EQUAL) {
             Value result;
-            bool ok = arith(in, s->as.assign.value, base_op(s->as.assign.op), b->value, v, &result);
+            bool ok = arith(in, s->as.assign.value, base_op(s->as.assign.op), *target, v, &result);
             value_release(v);
-            if (!ok) return false;
+            if (!ok) return FLOW_ERROR;
             v = result;
         }
-        value_release(b->value);
-        b->value = v;
-        return true;
+        value_release(*target);
+        *target = v;
+        return FLOW_NORMAL;
     }
     case STMT_IF: {
         for (size_t i = 0; i < s->as.if_.count; i++) {
             Value c;
-            if (!eval(in, s->as.if_.conds[i], &c)) return false;
-            if (!need_bool(in, s->as.if_.conds[i], c, "the condition of `if`")) return false;
+            if (!eval(in, s->as.if_.conds[i], &c)) return FLOW_ERROR;
+            if (!need_bool(in, s->as.if_.conds[i], c, "the condition of `if`")) return FLOW_ERROR;
             if (c.as.boolean) return exec_block(in, s->as.if_.blocks[i]);
         }
         if (s->as.if_.otherwise != NULL) return exec_block(in, s->as.if_.otherwise);
-        return true;
+        return FLOW_NORMAL;
     }
+    case STMT_WHILE:
+        for (;;) {
+            Value c;
+            if (!eval(in, s->as.while_.cond, &c)) return FLOW_ERROR;
+            if (!need_bool(in, s->as.while_.cond, c, "the condition of `while`")) return FLOW_ERROR;
+            if (!c.as.boolean) return FLOW_NORMAL;
+            Flow flow = exec_block(in, s->as.while_.body);
+            if (flow == FLOW_BREAK) return FLOW_NORMAL;
+            if (flow == FLOW_CONTINUE || flow == FLOW_NORMAL) continue;
+            return flow;
+        }
+    case STMT_FOR:
+        return exec_for(in, s);
+    case STMT_BREAK:
+        return FLOW_BREAK;
+    case STMT_CONTINUE:
+        return FLOW_CONTINUE;
+    case STMT_RETURN: {
+        Value v = value_null();
+        if (s->as.return_.value != NULL && !eval(in, s->as.return_.value, &v)) return FLOW_ERROR;
+        value_release(in->return_value);
+        in->return_value = v;
+        return FLOW_RETURN;
     }
-    return true;
+    case STMT_FN:
+        return FLOW_NORMAL;      /* created by define_functions when the scope began */
+    }
+    return FLOW_NORMAL;
 }
 
-/* A block is a scope: its variables are released when it ends. */
-static bool exec_block(Interp *in, const StmtList *block) {
-    Env *inner = env_new(in->env);
-    in->env = inner;
-    bool ok = true;
-    for (size_t i = 0; ok && i < block->count; i++) ok = exec_stmt(in, block->items[i]);
-    in->env = inner->parent;
-    env_free(inner);
-    return ok;
+/* Runs the statements of a list in `env`, functions first. The caller
+ * restores in->env afterwards. */
+static Flow exec_list(Interp *in, const StmtList *list, ObjEnv *env) {
+    in->env = env;
+    define_functions(in, list, env);
+    for (size_t i = 0; i < list->count; i++) {
+        Flow flow = exec_stmt(in, list->items[i]);
+        if (flow != FLOW_NORMAL) return flow;
+    }
+    return FLOW_NORMAL;
 }
 
 int interp_run(Interp *in, const Program *prog, Diag *err) {
+    char base;
+    in->stack_base = &base;
     in->err = err;
+    in->source = NULL;
+    in->depth = 0;
+    Flow flow = exec_list(in, &prog->body, in->globals);
     in->env = in->globals;
-    for (size_t i = 0; i < prog->body.count; i++) {
-        if (!exec_stmt(in, prog->body.items[i])) {
-            fflush(stdout);
-            return 1;
-        }
+    if (flow == FLOW_ERROR) {
+        fflush(stdout);
+        return 1;
     }
     if (fflush(stdout) != 0 || ferror(stdout)) {
         fputs("error: cannot write output\n", stderr);

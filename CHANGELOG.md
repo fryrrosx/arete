@@ -4,6 +4,15 @@ One line per phase. Phase numbers refer to `ROADMAP.md`.
 
 ## Unreleased
 
+- Phase 7: `while`, `for x in a..b` / `a..=b` with `break` and `continue`
+  (a fresh loop variable per iteration), ranges as values; `fn` with typed
+  parameters, default values evaluated per call, named arguments, `return`,
+  recursion with a 1000-call limit and a C-stack guard; functions as values
+  and one-line lambdas `fn(x) => x * 2`; closures capturing by reference;
+  functions visible in their whole scope; the checker became a resolver
+  that numbers local names as (hops, slot); `print` is an ordinary function
+  value; examples 05, 06 and 07 promoted.
+
 - Phase 8: the REPL takes blocks and open brackets across lines with the
   `... ` prompt, a blank line closes a block as in Python; line editing and
   history through vendored linenoise on Linux and macOS (the console's own

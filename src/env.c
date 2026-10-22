@@ -1,56 +1,78 @@
 #include "env.h"
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "util.h"
 
-Env *env_new(Env *parent) {
-    Env *env = xcalloc(sizeof *env);
+ObjEnv *env_new(ObjEnv *parent, int slot_count) {
+    ObjEnv *env = xcalloc(sizeof *env);
+    env->obj.kind = OBJ_ENV;
+    env->obj.refcount = 1;
     env->parent = parent;
+    if (parent != NULL) env_retain(parent);
+    env->slot_count = slot_count;
+    if (slot_count > 0) {
+        env->slots = xcalloc((size_t)slot_count * sizeof(Value));   /* all VAL_NULL */
+    }
+    rt_track_env(env);
     return env;
 }
 
-void env_free(Env *env) {
-    if (env == NULL) return;
-    for (size_t i = 0; i < env->count; i++) {
-        free(env->items[i].name);
-        value_release(env->items[i].value);
+static Value env_value(ObjEnv *env) {
+    Value v;
+    v.kind = VAL_OBJ;
+    v.as.obj = &env->obj;
+    return v;
+}
+
+void env_retain(ObjEnv *env) {
+    value_retain(env_value(env));
+}
+
+void env_release(ObjEnv *env) {
+    value_release(env_value(env));
+}
+
+void env_destroy(ObjEnv *env) {
+    rt_untrack_env(env);
+    for (int i = 0; i < env->slot_count; i++) value_release(env->slots[i]);
+    free(env->slots);
+    for (size_t i = 0; i < env->name_count; i++) {
+        free(env->names[i].name);
+        value_release(env->names[i].value);
     }
-    free(env->items);
+    free(env->names);
+    if (env->parent != NULL && !rt_shutting_down()) env_release(env->parent);
     free(env);
 }
 
-static Binding *find_here(Env *env, const char *name) {
-    for (size_t i = 0; i < env->count; i++) {
-        if (strcmp(env->items[i].name, name) == 0) return &env->items[i];
+Value *env_slot(ObjEnv *env, int hops, int slot) {
+    for (int i = 0; i < hops; i++) env = env->parent;
+    return &env->slots[slot];
+}
+
+Binding *env_find_global(ObjEnv *global, const char *name) {
+    for (size_t i = 0; i < global->name_count; i++) {
+        if (strcmp(global->names[i].name, name) == 0) return &global->names[i];
     }
     return NULL;
 }
 
-void env_define(Env *env, const char *name, Value value, bool is_mutable) {
-    Binding *existing = find_here(env, name);
+void env_define_global(ObjEnv *global, const char *name, Value value, bool is_mutable) {
+    Binding *existing = env_find_global(global, name);
     if (existing != NULL) {
         value_release(existing->value);
         existing->value = value;
         existing->is_mutable = is_mutable;
         return;
     }
-    if (env->count == env->capacity) {
-        env->capacity = env->capacity == 0 ? 8 : env->capacity * 2;
-        env->items = xrealloc(env->items, env->capacity * sizeof(Binding));
+    if (global->name_count == global->name_capacity) {
+        global->name_capacity = global->name_capacity == 0 ? 8 : global->name_capacity * 2;
+        global->names = xrealloc(global->names, global->name_capacity * sizeof(Binding));
     }
-    Binding *b = &env->items[env->count++];
+    Binding *b = &global->names[global->name_count++];
     b->name = xstrdup(name);
     b->value = value;
     b->is_mutable = is_mutable;
-}
-
-Binding *env_lookup(Env *env, const char *name) {
-    for (Env *e = env; e != NULL; e = e->parent) {
-        Binding *b = find_here(e, name);
-        if (b != NULL) return b;
-    }
-    return NULL;
 }

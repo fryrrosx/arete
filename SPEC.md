@@ -120,10 +120,10 @@ opposite choices. Arete takes the best of each and resolves conflicts explicitly
 | `if` | Statement: `if cond:` / `elif cond:` / `else:`. The condition must be `bool`; `if 1:` is an error | PDF (if) / P1-default (`elif`) / P6-default (bool condition) |
 | Conditional expression | `a if cond else b`, as in Python | P1 |
 | `when` | Pattern matching, as in Kotlin. Works as a statement and as a value, but as a value only as the complete right-hand side of `let`, `var`, `=` or after `return`; never inside brackets and never as an operand. Branches: `value ->`, `v1, v2 ->`, `in range ->`, `is Type ->`, `null ->`, `else ->`; inside an `is Type` branch the subject has that type. Without a subject, branches are conditions. A missing branch is a runtime error until exhaustiveness checking arrives (phase 25) | PDF (when) / P1 (value position) / P1-default (branch spellings as in the examples) / OPEN(9) (range pattern spelling, branch bodies, block branches) |
-| Loops | `while cond:`; `for x in iterable:`; `break`, `continue` | PDF |
-| Ranges | `a..b` excludes `b`, `a..=b` includes `b` | OPEN(7), provisional in examples |
-| Functions | `fn name(a: int, b: string = "x") -> T:`; `return`; default values; named arguments at the call site. Omitting `-> T` means the function returns nothing: its call cannot be used as a value, and a bare `return` is allowed only there. Nested `fn` declarations are allowed. Since assignment is a statement, `f(a = 1)` is always a named argument | PDF (fn) / P1-default (defaults, named args, no-return form, nested fn) |
-| Lambdas and closures | Functions are values; closures capture variables (the examples assume capture by reference). Spelling of lambdas is open; examples use `fn(x) => x * 2`. A block lambda inside parentheses conflicts with the rule that brackets suppress indentation, so phase 7 chooses between: no block lambdas (use a nested named `fn`), a trailing block after the closing parenthesis, or a lexer exception | OPEN(7) |
+| Loops | `while cond:`; `for x in iterable:`; `break`, `continue`. The loop variable of `for` is a fresh immutable binding on every iteration (a closure made inside the loop keeps its own), and in phase 7 it is a single name or `_`. `break`/`continue` outside a loop and `return` outside a function are compile errors | PDF / P7-default (per-iteration variable, errors) |
+| Ranges | `a..b` excludes `b`, `a..=b` includes `b`; both ends are `int`. A range is a value: `let r = 0..3` and `print(r)` (shows `0..3`) work, `==` compares the ends. `..` sits between the comparison and `+` levels and does not chain | P7 (spelling) / P7-default (value, levels) |
+| Functions | `fn name(a: int, b: string = "x") -> T:`; `return`; default values; named arguments at the call site. Omitting `-> T` means the function returns nothing: its call cannot be used as a value, and a bare `return` is allowed only there; a function with `-> T` that reaches its end without `return` is a runtime error. Nested `fn` declarations are allowed. Since assignment is a statement, `f(a = 1)` is always a named argument. Functions are visible in their whole scope, so a top-level `fn` may be called above its declaration and two functions may call each other; `let`/`var` are not hoisted. Parameters need a type and are immutable; a default value is evaluated at every call and may use the parameters to its left; positional arguments come before named ones; a function name cannot be reassigned or redeclared in its scope. At most 1000 calls may be nested; the 1001st is the runtime error `too many nested calls` | PDF (fn) / P1-default (defaults, named args, no-return form, nested fn) / P7 (visibility) / P7-default (the rest) |
+| Lambdas and closures | Functions are values: they can be stored, passed and returned, print as `<fn name>` (`<fn lambda>` for a lambda) and compare equal only to themselves. Closures capture variables by reference: an inner function sees and changes the same variable as its enclosing scope. A lambda is `fn(x) => x * 2`: parameters with optional types, an optional `-> T`, and one expression after `=>` that extends as far right as possible; no default values. There is no block lambda: multi-line logic is a nested named `fn`, which is a closure too. `print` is an ordinary function value | P7 (spelling, capture by reference, no block lambda) / P7-default (printing, equality, `print` as a value) |
 | Errors | A function that can fail is marked `throws`; the compiler refuses an unhandled call. `throw Error("...")`, `try:` / `catch e:`, `e.message` | PDF (throws, try/catch) / P1-default (`Error`, `e.message`) / OPEN(9) (typed throws, `finally`/`defer`, printing an `Error` value) |
 | Classes | `class Name(params):`, methods inside; constructor parameters become fields; `self`; closed by default, `open` allows inheritance; `interface`; `data class` with structural `==`, a printed form `Point(x=1, y=2)` and `copy`; `enum` | PDF (class, open, interface, data class) / P1-default (parameters are fields) / OPEN(9) (`self` vs `this`, inheritance and interface spelling, `override`, data class method names and print format, `enum`) |
 | Modules | One file = one module. Everything private, `pub` exports. `use "./geometry"` imports your own file; the module is then available under the file name without `.rt`, as `geometry.square` | PDF (module, pub) / P1-default (`use "./path"`, file-stem name) / OPEN(9) (alias, selective import, top-level code, cycles) |
@@ -257,7 +257,7 @@ Decided messages so far:
 | Unknown character | `` unexpected character `§` `` | |
 | `print()` or `print(a, b)` | `print takes exactly one argument` | `write print(x)` |
 | `print(print(x))` | `` `print` returns nothing and cannot be used as a value `` | `call it on its own line` |
-| `shout(x)` | `` unknown function `shout` `` | `` only `print` exists so far `` (phase 3) |
+| `shout(x)` | `` unknown function `shout` `` | `` declare it first: `fn shout(...):` `` |
 | `print(` at end of file | `` unclosed `(` `` | `` add the matching `)` `` |
 | `)` without `(` | `` unmatched `)` `` | |
 | `\q` in a string | `unknown escape sequence` | `valid escapes: \n \t \\ \" \' \u{...}` |
@@ -287,7 +287,27 @@ Decided messages so far:
 | `12abc` | `invalid number literal` | |
 | `{` in a string before phase 11 | `string interpolation comes in phase 11` | |
 
-| `"x"("y")` | `only a name can be called` | |
+| `"x"("y")` | `a string cannot be called` (likewise `an int`, `a float`, `a bool`) | `to call a function write its name: f(...)` |
+| `x(1)` where `x` holds an int | `` `x` is not a function `` | runtime; `cannot call int` when the callee is not a name |
+| `break` outside a loop | `` `break` outside a loop `` (also `continue`) | `` `break` only works inside `while` or `for` `` |
+| `return` at top level | `` `return` outside a function `` | |
+| `return 1` in a function without `-> T` | `` `say` returns nothing `` | `` add `-> type` after the parameters, or write a bare `return` `` |
+| bare `return` in a function with `-> T` | `` `f` must return a value `` | `` write `return value` `` |
+| a function with `-> T` reaches its end | `` `f` ended without returning a value `` | runtime, points at the call |
+| `f(1)` with a required `b` | `` missing argument `b` in call to `f` `` | `pass it by position or by name: b = ...` |
+| `f(1, 2)` for a one-parameter `f` | `` too many arguments to `f` `` | the label says how many it takes |
+| `f(c = 1)` with no parameter `c` | `` `f` has no parameter `c` `` | lists the parameters |
+| `f(1, a = 2)` | `` argument `a` is given twice `` | |
+| `f(a = 1, 2)` | `positional argument after a named one` | `named arguments go last: f(1, 2, name = 3)` |
+| `let v = say()` for a function without `-> T` | `` `say` returns nothing and cannot be used as a value `` | `call it on its own line` |
+| `fn h(x):` | `` parameter `x` needs a type `` | `` write `x: int` `` |
+| `fn h(x: int) => x` | `a named function has a block body` | `` `=>` is for lambdas `` |
+| `fn(x = 1) => x` | `a lambda parameter cannot have a default value` | |
+| 1001 nested calls | `too many nested calls` | runtime; `the limit is 1000 nested calls` |
+| `for i in 5:` | `cannot iterate over int` | `` write a range: `for i in 0..10:` `` |
+| `0..1.5` | `range ends must be int, found float` | runtime |
+| `1..2..3` | `a range cannot be an end of another range` | |
+| C stack exhausted | `stack overflow` | never a crash: the walk checks its stack use |
 | `arete 0.1` on line 2 or in the REPL | `version header belongs on line 1 only` | |
 | `arete run a.rt extra` | `` unexpected argument `extra` `` | usage |
 | stdout cannot be written | `cannot write output` | exit code 1 |
@@ -364,12 +384,17 @@ let sign = "neg" if x < 0 else "pos"
 while i < 3:
     i += 1
 
-for n in 0..3:        # 0, 1, 2            OPEN(7)
+for n in 0..3:        # 0, 1, 2
     print(n)
-for n in 1..=3:       # 1, 2, 3            OPEN(7)
+for n in 1..=3:       # 1, 2, 3
     print(n)
-for item in items:
+for item in items:    # collections: phase 12
     print(item)
+for i in 0..10:
+    if i == 2:
+        continue
+    if i == 5:
+        break
 ```
 
 ### Functions
@@ -380,9 +405,23 @@ fn greet(name: string, greeting: string = "Hello") -> string:
 
 print(greet("Karim", greeting = "Hi"))
 
-let double = fn(x: int) => x * 2          # OPEN(7)
+let double = fn(x: int) => x * 2          # a lambda: one expression after `=>`
 fn apply(f: fn(int) -> int, v: int) -> int:
     return f(v)
+print(apply(fn(x) => x + 1, 9))           # parameter types may be left out in a lambda
+
+fn make_counter() -> fn() -> int:          # a closure captures `count` by reference
+    var count = 0
+    fn next() -> int:
+        count += 1
+        return count
+    return next
+
+main()                                     # functions are visible in their whole scope
+fn main():
+    print(fib(20))
+fn fib(n: int) -> int:
+    return n if n < 2 else fib(n - 1) + fib(n - 2)
 ```
 
 ### Strings
@@ -477,7 +516,7 @@ examples, before any code for it is written.
 
 **Phase 5 (variables), decided P5-default:** a second `let x` in the same scope is an error; allowed in the REPL. Type annotations are parsed and kept but not checked until phase 10.
 
-**Phase 7 (loops, functions):** range spelling (`..`/`..=` vs `..<` vs `range()`); lambda spelling, a return type on lambdas, and whether a block lambda exists given that brackets suppress indentation; capture by reference or by value; are top-level `fn` visible before their definition; `not in` as one operator.
+**Phase 7 (loops, functions), decided P7:** ranges are `a..b` and `a..=b`; lambdas are `fn(x) => expr` with optional parameter types and `-> T`, and there is no block lambda (a nested named `fn` serves); closures capture by reference; `fn` are visible in their whole scope. P7-default: `not in` is one operator, implemented with collections in phase 12.
 
 **Phase 9 (stage C syntax session):** `when` branch bodies (expression only, or also `return`, `throw`, `break`, assignment) and block branches `-> :`; raw strings without interpolation; printing an `Error` value; data class destructuring; string methods vs `len()`; string repeat `*` and substring `in`; collection literals, empty `{}`, `List` vs `MutableList`, method names (`add`/`append`); destructuring in `for`; `str()` conversion; `when` branch spellings and exhaustiveness; typed `throws`, what may be thrown, `finally`/`defer`, `rethrows`; `self` vs `this`; inheritance and override spelling; interface implementation spelling; data class method names; `enum` and `sealed`; explicit type arguments at call (`json<User>()` vs `json::<User>()`); reified vs erased generics; module alias and selective import; top-level code in modules; circular imports.
 

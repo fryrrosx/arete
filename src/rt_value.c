@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "env.h"
 #include "util.h"
 
 Value value_null(void) {
@@ -65,6 +66,80 @@ Value value_string_concat(Value a, Value b) {
     return v;
 }
 
+Value value_range(int64_t start, int64_t end, bool inclusive) {
+    ObjRange *r = xmalloc(sizeof *r);
+    r->obj.kind = OBJ_RANGE;
+    r->obj.refcount = 1;
+    r->start = start;
+    r->end = end;
+    r->inclusive = inclusive;
+    Value v;
+    v.kind = VAL_OBJ;
+    v.as.obj = &r->obj;
+    return v;
+}
+
+/* ---- the list of environments and functions, for rt_shutdown ---------- */
+
+static ObjEnv *all_envs = NULL;
+static ObjFunction *all_functions = NULL;
+static bool shutting_down = false;
+
+void rt_track_env(ObjEnv *env) {
+    env->track_prev = NULL;
+    env->track_next = all_envs;
+    if (all_envs != NULL) all_envs->track_prev = env;
+    all_envs = env;
+}
+
+void rt_untrack_env(ObjEnv *env) {
+    if (env->track_prev != NULL) env->track_prev->track_next = env->track_next;
+    else all_envs = env->track_next;
+    if (env->track_next != NULL) env->track_next->track_prev = env->track_prev;
+}
+
+static void track_function(ObjFunction *f) {
+    f->track_prev = NULL;
+    f->track_next = all_functions;
+    if (all_functions != NULL) all_functions->track_prev = f;
+    all_functions = f;
+}
+
+static void untrack_function(ObjFunction *f) {
+    if (f->track_prev != NULL) f->track_prev->track_next = f->track_next;
+    else all_functions = f->track_next;
+    if (f->track_next != NULL) f->track_next->track_prev = f->track_prev;
+}
+
+Value value_function(const char *name, const void *proto, ObjEnv *closure, int native) {
+    ObjFunction *f = xcalloc(sizeof *f);
+    f->obj.kind = OBJ_FUNCTION;
+    f->obj.refcount = 1;
+    f->name = name;
+    f->proto = proto;
+    f->closure = closure;
+    f->native = native;
+    track_function(f);
+    Value v;
+    v.kind = VAL_OBJ;
+    v.as.obj = &f->obj;
+    return v;
+}
+
+static void function_destroy(ObjFunction *f) {
+    untrack_function(f);
+    if (f->closure != NULL && !shutting_down) env_release(f->closure);
+    free(f);
+}
+
+bool rt_shutting_down(void) {
+    return shutting_down;
+}
+
+bool value_is(Value v, ObjKind kind) {
+    return v.kind == VAL_OBJ && v.as.obj->kind == kind;
+}
+
 void value_retain(Value v) {
     if (v.kind == VAL_OBJ) v.as.obj->refcount++;
 }
@@ -72,7 +147,47 @@ void value_retain(Value v) {
 void value_release(Value v) {
     if (v.kind != VAL_OBJ) return;
     Obj *obj = v.as.obj;
-    if (--obj->refcount == 0) free(obj);
+    /* During shutdown the sweep below frees environments and functions
+     * directly, cycles and all; a release reaching one of them must not
+     * free it a second time. */
+    if (shutting_down && (obj->kind == OBJ_ENV || obj->kind == OBJ_FUNCTION)) return;
+    if (--obj->refcount != 0) return;
+    switch (obj->kind) {
+    case OBJ_STRING:
+    case OBJ_RANGE:
+        free(obj);
+        break;
+    case OBJ_FUNCTION:
+        function_destroy((ObjFunction *)obj);
+        break;
+    case OBJ_ENV:
+        env_destroy((ObjEnv *)obj);
+        break;
+    }
+}
+
+void rt_shutdown(void) {
+    shutting_down = true;
+    while (all_envs != NULL) env_destroy(all_envs);
+    while (all_functions != NULL) function_destroy(all_functions);
+    shutting_down = false;
+}
+
+const char *value_type_name(Value v) {
+    switch (v.kind) {
+    case VAL_NULL: return "null";
+    case VAL_BOOL: return "bool";
+    case VAL_INT: return "int";
+    case VAL_FLOAT: return "float";
+    case VAL_OBJ:
+        switch (v.as.obj->kind) {
+        case OBJ_STRING: return "string";
+        case OBJ_RANGE: return "range";
+        case OBJ_FUNCTION: return "fn";
+        case OBJ_ENV: return "scope";
+        }
+    }
+    return "?";
 }
 
 /* Floats print like Python's repr: the shortest digits that read back to
@@ -128,10 +243,25 @@ void value_print(Value v, FILE *out) {
     case VAL_FLOAT:
         print_float(v.as.number, out);
         break;
-    case VAL_OBJ: {
-        ObjString *s = (ObjString *)v.as.obj;
-        fwrite(s->chars, 1, s->length, out);
+    case VAL_OBJ:
+        switch (v.as.obj->kind) {
+        case OBJ_STRING: {
+            ObjString *s = (ObjString *)v.as.obj;
+            fwrite(s->chars, 1, s->length, out);
+            break;
+        }
+        case OBJ_RANGE: {
+            ObjRange *r = (ObjRange *)v.as.obj;
+            fprintf(out, "%" PRId64 "%s%" PRId64, r->start, r->inclusive ? "..=" : "..", r->end);
+            break;
+        }
+        case OBJ_FUNCTION:
+            fprintf(out, "<fn %s>", ((ObjFunction *)v.as.obj)->name);
+            break;
+        case OBJ_ENV:
+            fputs("<scope>", out);
+            break;
+        }
         break;
-    }
     }
 }

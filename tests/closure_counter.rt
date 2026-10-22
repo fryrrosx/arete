@@ -1,0 +1,13 @@
+arete 0.1
+fn make_counter() -> fn() -> int:
+    var count = 0
+    fn next() -> int:
+        count += 1
+        return count
+    return next
+let c1 = make_counter()
+let c2 = make_counter()
+print(c1())
+print(c1())
+print(c2())
+print(c1())

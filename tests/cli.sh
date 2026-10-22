@@ -90,6 +90,29 @@ case "$(uname -s 2>/dev/null)" in
        fi ;;
 esac
 
+# Functions declared in one REPL input are callable in the next, and may be
+# redefined; an error inside such a function shows the line of the input
+# that declared it.
+out="$(printf 'fn f() -> int:\n    return 7\n\nprint(f())\n' | "$bin" 0.1 2>&1)"
+[ "$out" = "7" ] || { echo "FAIL repl-fn-across-inputs: $out"; fail=1; }
+out="$(printf 'fn f() -> int:\n    return 1\n\nfn f() -> int:\n    return 2\n\nprint(f())\n' | "$bin" 0.1 2>&1)"
+[ "$out" = "2" ] || { echo "FAIL repl-fn-redefined: $out"; fail=1; }
+err="$(printf 'fn f() -> int:\n    return 1 // 0\n\nprint("before")\nf()\n' | "$bin" 0.1 2>&1 >/dev/null)"
+case "$err" in
+    *"<repl>:2:14"*" 2 |     return 1 // 0"*) ;;
+    *) echo "FAIL repl-error-in-earlier-fn: $err"; fail=1 ;;
+esac
+out="$(printf 'return 1\nprint("still here")\n' | "$bin" 0.1 2>/dev/null)"
+code=$?
+if [ "$out" != "still here" ] || [ "$code" -ne 1 ]; then
+    echo "FAIL repl-return-at-top-level (exit $code): $out"; fail=1
+fi
+out="$(printf 'let c = make()\n' | "$bin" 0.1 2>&1)"
+case "$out" in
+    *"unknown function \`make\`"*) ;;
+    *) echo "FAIL repl-unknown-function: $out"; fail=1 ;;
+esac
+
 # Empty input and empty lines are fine.
 out="$(printf '' | "$bin" 0.1 2>&1)"
 [ "$out" = "" ] || { echo "FAIL repl-empty-input: $out"; fail=1; }

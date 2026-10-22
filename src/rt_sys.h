@@ -34,4 +34,8 @@ void rt_history_save(void);
 /* True when standard input is an interactive terminal. */
 bool rt_stdin_is_terminal(void);
 
+/* Bytes of stack the main thread has, as far as the platform tells; 8 MB
+ * when it does not. The interpreter keeps its walk inside this. */
+size_t rt_stack_limit(void);
+
 #endif

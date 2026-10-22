@@ -1,0 +1,4 @@
+arete 0.1
+let f = 1
+fn f():
+    print(1)

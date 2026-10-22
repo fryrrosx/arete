@@ -1,0 +1,6 @@
+arete 0.1
+fn f(a: int, b: int = 2) -> int:
+    return a + b
+let g = f
+print(g(1))
+print(g(b = 5, a = 1))

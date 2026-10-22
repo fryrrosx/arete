@@ -1,0 +1,7 @@
+arete 0.1
+fn make_adders() -> fn(int) -> int:
+    var last = fn(x: int) -> int => x
+    for n in 1..=3:
+        last = fn(x: int) -> int => x + n
+    return last
+print(make_adders()(10))

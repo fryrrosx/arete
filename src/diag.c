@@ -69,6 +69,7 @@ static void print_caret_padding(const char *text, size_t from, size_t to) {
 #define WINDOW 120   /* longest source line shown in full */
 
 void diag_print(const Source *src, const Diag *d) {
+    if (d->source != NULL) src = d->source;
     size_t len = 0;
     const char *text = find_line(src, d->line, &len);
     size_t column = (size_t)d->column - 1;

@@ -1,0 +1,16 @@
+arete 0.1
+fn sign(n: int) -> string:
+    if n < 0:
+        return "negative"
+    if n == 0:
+        return "zero"
+    return "positive"
+fn first_over(limit: int) -> int:
+    for i in 0..100:
+        if i * i > limit:
+            return i
+    return -1
+print(sign(-3))
+print(sign(0))
+print(sign(9))
+print(first_over(50))

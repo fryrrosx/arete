@@ -1,0 +1,6 @@
+arete 0.1
+fn greet(name: string, greeting: string = "Hello") -> string:
+    return greeting + ", " + name
+let d = fn(x, y: int) -> int => x * y
+print(greet("K", greeting = "Hi"))
+print(d(2, 3)(1))

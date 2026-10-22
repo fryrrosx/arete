@@ -1,0 +1,9 @@
+arete 0.1
+let a = "global"
+if true:
+    fn show() -> string:
+        return a
+    print(show())
+    let a = "block"
+    print(show())
+    print(a)

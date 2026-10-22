@@ -1,0 +1,14 @@
+arete 0.1
+let double = fn(x: int) => x * 2
+print(double(21))
+fn apply(f: fn(int) -> int, v: int) -> int:
+    return f(v)
+fn twice(f: fn(int) -> int, v: int) -> int:
+    return f(f(v))
+print(apply(fn(x) => x + 1, 9))
+print(twice(fn(x) => x * x, 3))
+let label = fn(x: int) => "big" if x > 5 else "small"
+print(label(10))
+print(label(1))
+let typed = fn(a: int, b: int) -> int => a - b
+print(typed(b = 1, a = 10))

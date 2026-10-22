@@ -1,0 +1,8 @@
+arete 0.1
+fn report(n: int):
+    if n > 2:
+        print("big")
+        return
+    print("small")
+report(1)
+report(5)

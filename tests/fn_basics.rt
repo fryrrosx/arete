@@ -1,0 +1,9 @@
+arete 0.1
+fn greet(name: string, greeting: string = "Hello") -> string:
+    return greeting + ", " + name + "!"
+fn say(text: string):
+    print(text)
+print(greet("World"))
+print(greet("Karim", greeting = "Hi"))
+print(greet(greeting = "Hey", name = "K"))
+say("done")

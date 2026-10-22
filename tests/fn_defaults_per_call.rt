@@ -1,0 +1,11 @@
+arete 0.1
+var calls = 0
+fn next() -> int:
+    calls += 1
+    return calls
+fn f(a: int = next(), b: int = a * 10) -> int:
+    return a + b
+print(f())
+print(f())
+print(f(5))
+print(f(b = 1))

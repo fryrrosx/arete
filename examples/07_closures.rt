@@ -4,7 +4,7 @@ arete 0.1
 fn make_counter() -> fn() -> int:
     var count = 0
     fn next() -> int:
-        count += 1              # captures `count` by reference; OPEN(7): capture rule
+        count += 1              # captures `count` by reference (phase 7 decision)
         return count
     return next
 
@@ -12,13 +12,13 @@ let counter = make_counter()
 print(counter())
 print(counter())
 
-let double = fn(x: int) => x * 2        # OPEN(7): lambda spelling
+let double = fn(x: int) => x * 2        # a lambda: one expression after `=>`
 print(double(21))
 
 fn apply(f: fn(int) -> int, v: int) -> int:
     return f(v)
 
-print(apply(fn(x) => x + 1, 9))         # x: int inferred from apply's signature
+print(apply(fn(x) => x + 1, 9))         # the parameter type may be left out in a lambda
 
 # expected output:
 # 1

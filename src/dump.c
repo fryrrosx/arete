@@ -79,6 +79,31 @@ static void dump_type(const TypeExpr *t, FILE *out, bool nested) {
     }
 }
 
+static void dump_expr(const Expr *e, FILE *out);
+
+/* (a: int b: string = "x") -> T */
+static void dump_signature(const FnProto *f, FILE *out) {
+    fputc('(', out);
+    for (size_t i = 0; i < f->param_count; i++) {
+        const Param *p = &f->params[i];
+        if (i > 0) fputc(' ', out);
+        fputs(p->name, out);
+        if (p->type != NULL) {
+            fputs(": ", out);
+            dump_type(p->type, out, false);
+        }
+        if (p->default_value != NULL) {
+            fputs(" = ", out);
+            dump_expr(p->default_value, out);
+        }
+    }
+    fputc(')', out);
+    if (f->result != NULL) {
+        fputs(" -> ", out);
+        dump_type(f->result, out, false);
+    }
+}
+
 static void dump_expr(const Expr *e, FILE *out) {
     switch (e->kind) {
     case EXPR_INT:
@@ -97,9 +122,11 @@ static void dump_expr(const Expr *e, FILE *out) {
         fputs(e->as.name.name, out);
         break;
     case EXPR_CALL:
-        fprintf(out, "(%s", e->as.call.name);
+        fputc('(', out);
+        dump_expr(e->as.call.callee, out);
         for (size_t i = 0; i < e->as.call.arg_count; i++) {
             fputc(' ', out);
+            if (e->as.call.names[i] != NULL) fprintf(out, "%s: ", e->as.call.names[i]);
             dump_expr(e->as.call.args[i], out);
         }
         fputc(')', out);
@@ -124,6 +151,20 @@ static void dump_expr(const Expr *e, FILE *out) {
         dump_expr(e->as.ternary.then, out);
         fputc(' ', out);
         dump_expr(e->as.ternary.otherwise, out);
+        fputc(')', out);
+        break;
+    case EXPR_RANGE:
+        fprintf(out, "(%s ", e->as.range.inclusive ? "..=" : "..");
+        dump_expr(e->as.range.start, out);
+        fputc(' ', out);
+        dump_expr(e->as.range.end, out);
+        fputc(')', out);
+        break;
+    case EXPR_LAMBDA:
+        fputs("(lambda ", out);
+        dump_signature(e->as.lambda.proto, out);
+        fputc(' ', out);
+        dump_expr(e->as.lambda.proto->expr_body, out);
         fputc(')', out);
         break;
     }
@@ -164,6 +205,41 @@ static void dump_stmt(const Stmt *s, FILE *out) {
             fputs(" else ", out);
             dump_block(s->as.if_.otherwise, out);
         }
+        fputc(')', out);
+        break;
+    case STMT_WHILE:
+        fputs("(while ", out);
+        dump_expr(s->as.while_.cond, out);
+        fputc(' ', out);
+        dump_block(s->as.while_.body, out);
+        fputc(')', out);
+        break;
+    case STMT_FOR:
+        fprintf(out, "(for %s ", s->as.for_.name);
+        dump_expr(s->as.for_.iterable, out);
+        fputc(' ', out);
+        dump_block(s->as.for_.body, out);
+        fputc(')', out);
+        break;
+    case STMT_BREAK:
+        fputs("(break)", out);
+        break;
+    case STMT_CONTINUE:
+        fputs("(continue)", out);
+        break;
+    case STMT_RETURN:
+        fputs("(return", out);
+        if (s->as.return_.value != NULL) {
+            fputc(' ', out);
+            dump_expr(s->as.return_.value, out);
+        }
+        fputc(')', out);
+        break;
+    case STMT_FN:
+        fprintf(out, "(fn %s ", s->as.fn.proto->name);
+        dump_signature(s->as.fn.proto, out);
+        fputc(' ', out);
+        dump_block(s->as.fn.proto->body, out);
         fputc(')', out);
         break;
     }

@@ -1,0 +1,11 @@
+arete 0.1
+fn double(x: int) -> int:
+    return x * 2
+let d = double
+print(d(4))
+print(d)
+print(fn(x) => x)
+print(d == double)
+print(d == fn(x) => x)
+let p = print
+p("via p")

@@ -5,11 +5,13 @@ previous sessions learned: the working rhythm with Karim, the definition of
 done for a phase, the shape of the code, and the mistakes already made once.
 Update it at the end of every phase.
 
-## 1. Where things stand (2026-10-21)
+## 1. Where things stand (2026-10-22)
 
-- Phases 0–6 and 8 are done and on `main` (commit `428b840`). Phase 7 (loops,
-  functions, closures, resolver) is next, but only when Karim says so. Never
-  start the next phase, a sub-phase, or a "quick improvement" on your own.
+- Phases 0–8 are done and on `main`. Phase 9 (the stage C syntax session:
+  strings, collections, `when`, errors, classes, null, generics, modules) is
+  next, then phase 10 (the type checker decision), both asked for by Karim on
+  2026-10-22. Never start a phase, a sub-phase, or a "quick improvement" he
+  did not ask for.
 - CI (`.github/workflows/ci.yml`) is green on Ubuntu, macOS and MSVC. Every
   push to `main` runs it; keep all three jobs green.
 - Karim's open exercise: the `%` and `%=` operators (ROADMAP ritual, step 8).
@@ -196,32 +198,37 @@ limited (SPEC §3) so deep input is an error, not a crash.
 - Never change a `SPEC.md` decision silently; never implement `%`; never edit
   the vendored linenoise body.
 
-## 7. Notes for phase 7
+## 7. Notes for phase 9 and 10
 
-- Put the "Решаем вместе" items to Karim first, in one or two batches. The
-  full list is the union of ROADMAP 7a–7c, SPEC §6 "Phase 7" and the OPEN(7)
-  rows of SPEC §2.5/§5: range syntax (SPEC provisionally has `a..b` exclusive
-  and `a..=b` inclusive; `0..<10` and `range(10)` are the alternatives);
-  visibility of functions declared below their use (two-pass collection as in
-  Go/Kotlin, or strictly top-down); lambda spelling (examples use
-  `fn(x) => x * 2`), whether a lambda may carry `-> Type`, and whether block
-  lambdas exist given the rule "no INDENT inside brackets"; capture by
-  reference (what `examples/pending/07_closures.rt` assumes) or by value;
-  `not in` as one operator. The iteration protocol of 7a (`iter/next` vs
-  index + length) is a design choice: propose it in the plan with reasons,
-  Karim decides only if he wants to.
-- Known constraints for the plan: the `for` target in phase 7 is a name or
-  `_` (destructuring is phase 9 in SPEC §6); unannotated lambda parameters
-  and the checking of defaults and named arguments are run-time matters until
-  the type checker of phase 10, so state that as a `P7-default`; the REPL's
-  rule that names may be redeclared must survive the resolver of 7d; the new
-  error texts (`break` outside a loop, `return` outside a function, wrong
-  number of arguments, unknown named argument, duplicate parameter, the
-  closure error of Crafting Interpreters ch. 11) are proposed in the plan and
-  go into the SPEC §4 table with the `.expected_error` files.
-- Karim's exercise for phase 7 is not chosen yet; propose one in the
-  walkthrough in the style of Crafting Interpreters' challenges (for example
-  `break` out of nested loops, or a `loop:` statement that runs until `break`).
+- Phase 9 is a decisions session, not code: `ROADMAP.md` "Фаза 9" lists the
+  topics, `SPEC.md` §6 "Phase 9" the open questions. Work topic by topic:
+  write 2–5 `.rt` examples "as if the language existed", put the choices to
+  Karim with consequences and a recommended default, record each answer as a
+  `P9` row in `SPEC.md` §2 and §5, add the grammar sketch to `GRAMMAR.md`
+  "Notes" and update `examples/pending/08`–`15` to the decided syntax.
+- Phase 10 starts with one question (ROADMAP "Фаза 10"): incremental type
+  checker now (path B, recommended) or all of stage C dynamic first (path A).
+  Path B: a `types.c` pass after `check.c`, bidirectional (annotations down,
+  literals and operators up), `int/float/string/bool/fn/range`, `let` inference,
+  signatures; REPL keeps a type environment per session.
+
+## 8. How phase 7 is built (read before touching functions)
+
+- `check.c` is the resolver: every scope it opens is one `ObjEnv` at run
+  time, in the same order (block, `for` body with the loop variable in slot 0,
+  function body with parameters first, lambda). If you add a construct that
+  opens a scope, add it to both or (hops, slot) go wrong.
+- Functions are hoisted per statement list: `declare_functions` (checker) and
+  `define_functions` (interpreter) run before the list's statements.
+- Closures make reference cycles; `rt_shutdown` sweeps every `ObjEnv` and
+  `ObjFunction` at exit. Mid-run leaks of cyclic closures are expected until
+  phase 29. ASan runs stay clean because of the sweep.
+- `call_function` in `interp.c` and `check_arguments` in `check.c` apply the
+  same argument rules with the same messages; change both together.
+- A REPL input's program and text live until the session ends (`Session` in
+  `main.c`), because function values point into the tree; `Diag.source` lets
+  an error inside such a function show the right input's line.
+
 - `check.c` and `env.c` are the same shape on purpose; the resolver of 7d
   replaces the checker's scope with slot indices and makes `Env` slot-based.
 - Candidates for promotion at the end: `examples/pending/05_loops.rt`,
